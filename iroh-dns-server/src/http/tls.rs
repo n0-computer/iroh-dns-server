@@ -12,27 +12,30 @@ use axum_server::{
     tls_rustls::{RustlsAcceptor, RustlsConfig},
 };
 use futures::{future::BoxFuture, FutureExt};
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls_acme::{axum::AxumAcceptor, caches::DirCache, AcmeConfig};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info_span, Instrument};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum CertMode {
     Manual,
-    LetsEncrypt { contact: String, prod: bool },
+    LetsEncrypt,
     SelfSigned,
 }
 
 impl CertMode {
-    pub async fn build(&self, hostname: &str, dir: PathBuf) -> Result<TlsAcceptor> {
+    pub async fn build(&self, domain: &str, dir: PathBuf, contact: Option<String>, prod: bool) -> Result<TlsAcceptor> {
         Ok(match self {
-            CertMode::Manual => TlsAcceptor::manual(hostname, dir).await?,
-            CertMode::SelfSigned => TlsAcceptor::self_signed(hostname).await?,
-            CertMode::LetsEncrypt { contact, prod } => {
+            CertMode::Manual => TlsAcceptor::manual(domain, dir).await?,
+            CertMode::SelfSigned => TlsAcceptor::self_signed(domain).await?,
+            CertMode::LetsEncrypt=> {
                 let dir = dir.join("acme");
+                let contact = contact.context("contact is required for letsencrypt cert mode")?;
                 tokio::fs::create_dir_all(&dir).await?;
-                TlsAcceptor::letsencrypt(hostname, contact, *prod, dir)?
+                TlsAcceptor::letsencrypt(domain, &contact, prod, dir)?
             }
         })
     }

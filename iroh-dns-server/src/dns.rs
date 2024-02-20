@@ -47,10 +47,10 @@ use url::Url;
 mod authority;
 
 /// DNS server settings
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DnsConfig {
     /// The port to serve a local UDP DNS server at
-    pub server_port: u16,
+    pub port: u16,
     /// SOA record data for any authoritative DNS records
     pub default_soa: String,
     /// Default time to live for returned DNS records (TXT & SOA)
@@ -62,7 +62,7 @@ pub struct DnsConfig {
 }
 
 pub async fn serve(
-    config: &DnsConfig,
+    config: DnsConfig,
     dns_server: DnsServer,
     token: CancellationToken,
 ) -> Result<()> {
@@ -70,7 +70,7 @@ pub async fn serve(
     let mut server = hickory_server::ServerFuture::new(dns_server);
 
     let ip4_addr = Ipv4Addr::new(127, 0, 0, 1);
-    let sock_addr = SocketAddrV4::new(ip4_addr, config.server_port);
+    let sock_addr = SocketAddrV4::new(ip4_addr, config.port);
 
     server.register_socket(UdpSocket::bind(sock_addr).await?);
     server.register_listener(
@@ -119,7 +119,7 @@ impl std::fmt::Debug for DnsServer {
 impl DnsServer {
     /// Create a DNS server given some settings, a connection to the DB for DID-by-username lookups
     /// and the server DID to serve under `_did.<origin>`.
-    pub fn new(config: &DnsConfig, server_did: String) -> Result<Self> {
+    pub fn new(config: &DnsConfig) -> Result<Self> {
         let default_soa = RData::parse(
             RecordType::SOA,
             config.default_soa.split_ascii_whitespace(),
@@ -130,11 +130,7 @@ impl DnsServer {
 
         Ok(Self {
             default_ttl: config.default_ttl,
-            authority: Arc::new(Self::setup_authority(
-                config,
-                server_did,
-                default_soa.clone(),
-            )?),
+            authority: Arc::new(Self::setup_authority(config, default_soa.clone())?),
             // user_did_authority: Arc::new(Self::setup_user_did_authority(
             //     settings,
             //     // db_pool,
@@ -170,11 +166,7 @@ impl DnsServer {
         Ok(())
     }
 
-    fn setup_authority(
-        config: &DnsConfig,
-        _server_did: String,
-        default_soa: rdata::SOA,
-    ) -> Result<InMemoryAuthority> {
+    fn setup_authority(config: &DnsConfig, default_soa: rdata::SOA) -> Result<InMemoryAuthority> {
         let origin = Name::parse(&config.origin, Some(&Name::root()))?;
         let serial = default_soa.serial();
         let authority = InMemoryAuthority::new(

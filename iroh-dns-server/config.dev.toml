@@ -1,0 +1,15 @@
+[http]
+port = 8080
+
+[https]
+port = 8443
+domain = "localhost"
+cert_mode = "self_signed"
+letsencrypt_prod = false
+
+[dns]
+port = 5353
+# have to read up on how soas work
+default_soa = "iroh.localdomain hostmaster.localdomain 0 10800 3600 604800 3600"
+default_ttl = 900
+origin = "iroh."
