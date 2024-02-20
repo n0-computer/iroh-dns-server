@@ -1,0 +1,37 @@
+[package]
+name = "magic-dns"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.80"
+async-trait = "0.1.77"
+axum = { version = "0.7.4", features = ["macros"] }
+axum-server = { version = "0.6.0", features = ["tls-rustls"] }
+base64-url = "2.0.2"
+bytes = "1.5.0"
+clap = { version = "4.5.1", features = ["derive"] }
+derive_more = { version = "0.99.17", features = ["display"] }
+futures = "0.3.30"
+hickory-proto = "0.24.0"
+hickory-server = { version = "0.24.0", features = ["dns-over-rustls"] }
+http = "1.0.0"
+iroh-net = "0.12.0"
+rcgen = "0.12.1"
+regex = "1.10.3"
+# rustls = "0.22.2"
+rustls = "0.21"
+# rustls-acme = { version = "0.9", features = ["tokio", "axum"] }
+rustls-pemfile = "1"
+serde = { version = "1.0.197", features = ["derive"] }
+tokio = { version = "1.36.0", features = ["full"] }
+tokio-rustls = "0.24"
+# tokio-rustls-acme = { version = "0.2.0", features = ["axum"] }
+tokio-rustls-acme = { git = "https://github.com/n0-computer/tokio-rustls-acme.git", branch = "deps/axum", features = ["axum"] }
+tokio-stream = "0.1.14"
+tokio-util = "0.7.10"
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+url = "2.5.0"
