@@ -129,8 +129,9 @@ impl NodeAnnounce {
 
     pub fn into_pkarr_signed_packet(
         &self,
-        signing_key: ed25519_dalek::SigningKey,
+        signing_key: &ed25519_dalek::SigningKey,
     ) -> Result<pkarr::SignedPacket> {
+        // TODO: PR to pkarr for impl From<ed25519_dalek::SigningKey> for pkarr::Keypair
         let keypair = pkarr::Keypair::from_secret_key(&signing_key.to_bytes());
         let packet = self.into_pkarr_dns_packet()?;
         let signed_packet = pkarr::SignedPacket::from_packet(&keypair, &packet)?;
@@ -268,12 +269,12 @@ mod tests {
             home_dns: vec![],
         };
         let signing_key = ed25519_dalek::SigningKey::from_bytes(&signing_key.to_bytes());
-        let sp = an.into_pkarr_signed_packet(signing_key.into())?;
+        let sp = an.into_pkarr_signed_packet(&signing_key)?;
         println!("sp {sp:#?}");
         println!("packet {:#?}", sp.packet());
         let an2 = NodeAnnounce::from_pkarr_signed_packet(sp)?;
         assert_eq!(an, an2);
-        let p = an.into_hickory_answers_message()?;
+        let _p = an.into_hickory_answers_message()?;
         Ok(())
     }
 }

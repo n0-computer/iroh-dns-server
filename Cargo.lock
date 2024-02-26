@@ -1401,6 +1401,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tracing",
+ "webpki-roots",
 ]
 
 [[package]]

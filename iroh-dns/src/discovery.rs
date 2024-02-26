@@ -7,8 +7,8 @@ use iroh_net::magicsock::Discovery;
 use iroh_net::{AddrInfo, NodeId};
 use tracing::warn;
 
-use crate::pkarr::Publisher;
-use crate::resolve::{Config, Resolver};
+use crate::publish::{self, Publisher};
+use crate::resolve::{self, Resolver};
 
 #[derive(Debug)]
 pub struct DnsDiscovery {
@@ -17,27 +17,32 @@ pub struct DnsDiscovery {
 }
 
 impl DnsDiscovery {
-    pub async fn with_irohdns(domain: String, secret: Option<SecretKey>) -> Result<Self> {
-        let config = Config::with_irohdns(domain)?;
-        Self::new(config, secret).await
-    }
-
-    pub async fn new(config: Config, secret: Option<SecretKey>) -> Result<Self> {
-        let publisher = secret.map(|s| Arc::new(Publisher::new(&config, s)));
-        let resolver = Resolver::new(&config).await?;
-        Ok(Self {
-            publisher,
+    pub fn new(resolver: Resolver, publisher: Option<Arc<Publisher>>) -> Self {
+        Self {
             resolver,
-        })
+            publisher,
+        }
+    }
+    pub fn with_iroh_test(secret_key: Option<SecretKey>) -> Result<Self> {
+        let publisher =
+            secret_key.map(|k| Arc::new(Publisher::new(publish::Config::with_iroh_test(k))));
+        let resolver = Resolver::new(resolve::Config::with_cloudflare_and_iroh_test())?;
+        Ok(Self::new(resolver, publisher))
+    }
+    pub fn localhost_dev(secret_key: Option<SecretKey>) -> Result<Self> {
+        let publisher =
+            secret_key.map(|k| Arc::new(Publisher::new(publish::Config::localhost_dev(k))));
+        let resolver = Resolver::new(resolve::Config::localhost_dev())?;
+        Ok(Self::new(resolver, publisher))
     }
 }
 
 impl Discovery for DnsDiscovery {
     fn publish(&self, info: &AddrInfo) {
-        let info = info.clone();
         if let Some(publisher) = self.publisher.clone() {
+            let info = info.clone();
             tokio::task::spawn(async move {
-                if let Err(err) = publisher.publish(&info).await {
+                if let Err(err) = publisher.publish_addr_info(&info).await {
                     warn!("failed to publish address update: {err:?}");
                 }
             });
@@ -45,6 +50,6 @@ impl Discovery for DnsDiscovery {
     }
 
     fn resolve<'a>(&'a self, node_id: &'a NodeId) -> BoxFuture<'a, Result<AddrInfo>> {
-        self.resolver.resolve_node_id(*node_id).boxed()
+        self.resolver.resolve_node_by_id(*node_id).boxed()
     }
 }
