@@ -13,4 +13,4 @@ default_soa = "dns1.irohdns.example hostmaster.irohdns.example 0 10800 3600 6048
 default_ttl = 900
 origin = "irohdns.example."
 additional_origins = ["iroh."]
-ipv4_addr = "192.168.178.142"
+ipv4_addr = "127.0.0.1"

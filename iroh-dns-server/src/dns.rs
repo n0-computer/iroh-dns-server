@@ -45,6 +45,8 @@ mod authority;
 
 pub const IROH_ROOT_ZONE: &'static str = "iroh";
 
+pub const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 12h
+
 /// DNS server settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DnsConfig {
@@ -219,6 +221,27 @@ impl DnsServer {
             );
             records.insert(key, record_set);
         }
+
+        let all_origins = Some(origin.clone())
+            .into_iter()
+            .chain(additional_origins.clone().into_iter());
+
+        let ns = &origin;
+        for name in all_origins {
+            let key = RrKey::new(name.clone().into(), RecordType::NS);
+            let record_set = record_set(
+                &name,
+                RecordType::NS,
+                serial,
+                Record::from_rdata(
+                    name.clone().into(),
+                    DEFAULT_NS_TTL,
+                    RData::NS(rdata::NS(ns.clone())),
+                ),
+            );
+            records.insert(key, record_set);
+        }
+
         let authority = InMemoryAuthority::new(origin.clone(), records, ZoneType::Primary, false)
             .map_err(|e| anyhow!(e))?;
 
