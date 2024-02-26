@@ -1,6 +1,7 @@
 use std::{net::Ipv4Addr, str::FromStr};
 
 use anyhow::Result;
+use hickory_proto::error::ProtoError;
 use hickory_resolver::{
     config::{NameServerConfigGroup, ResolverConfig, ResolverOpts},
     name_server::{GenericConnector, TokioRuntimeProvider},
@@ -8,11 +9,13 @@ use hickory_resolver::{
 };
 use iroh_net::{AddrInfo, NodeAddr, NodeId};
 
-use crate::packet::{NodeAnnounce, IROH_NODE_TXT_NAME};
+use crate::packet::{NodeAnnounce, IROH_NODE_TXT_LABEL};
 
 pub const IROH_TEST_DNS_IPV4: Ipv4Addr = Ipv4Addr::new(5, 75, 181, 3);
 pub const IROH_TEST_DOMAIN: &'static str = "testdns.iroh.link.";
 pub const EXAMPLE_DOMAIN: &'static str = "irohdns.example.";
+
+pub type HickoryResolver = AsyncResolver<GenericConnector<TokioRuntimeProvider>>;
 
 /// Resolver config
 pub struct Config {
@@ -60,7 +63,7 @@ impl Config {
 #[derive(Debug, Clone)]
 pub struct Resolver {
     default_node_origin: Name,
-    dns_resolver: AsyncResolver<GenericConnector<TokioRuntimeProvider>>,
+    dns_resolver: HickoryResolver,
 }
 
 impl Resolver {
@@ -76,21 +79,34 @@ impl Resolver {
             default_node_origin,
         })
     }
+
+    pub fn resolver(&self) -> &HickoryResolver {
+        &self.dns_resolver
+    }
+
     pub async fn resolve_node_by_domain(&self, domain: &str) -> Result<NodeAddr> {
         let name = Name::from_str(&domain)?;
-        self.resolve_node(&name).await
+        self.resolve_node(name).await
     }
 
     pub async fn resolve_node_by_id(&self, node_id: NodeId) -> Result<AddrInfo> {
         let name = Name::parse(&node_id.to_string(), Some(&self.default_node_origin))?;
-        let addr = self.resolve_node(&name).await?;
+        let addr = self.resolve_node(name).await?;
         Ok(addr.info)
     }
 
-    async fn resolve_node(&self, name: &Name) -> Result<NodeAddr> {
-        let name = Name::parse(IROH_NODE_TXT_NAME, Some(name))?;
+    async fn resolve_node(&self, name: Name) -> Result<NodeAddr> {
+        let name = with_iroh_node_txt_label(name)?;
         let lookup = self.dns_resolver.txt_lookup(name).await?;
         let an = NodeAnnounce::from_hickory_lookup(lookup.as_lookup())?;
         Ok(an.into())
+    }
+}
+
+fn with_iroh_node_txt_label(name: Name) -> Result<Name, ProtoError> {
+    if name.iter().next() == Some(IROH_NODE_TXT_LABEL.as_bytes()) {
+        Ok(name)
+    } else {
+        Name::parse(IROH_NODE_TXT_LABEL, Some(&name))
     }
 }

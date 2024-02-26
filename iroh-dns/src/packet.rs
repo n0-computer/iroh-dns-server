@@ -7,7 +7,7 @@ use iroh_net::{AddrInfo, NodeAddr, NodeId};
 use url::Url;
 
 pub const IROH_ROOT_ZONE: &'static str = "iroh";
-pub const IROH_NODE_TXT_NAME: &'static str = "_iroh_node";
+pub const IROH_NODE_TXT_LABEL: &'static str = "_iroh_node";
 pub const DEFAULT_TTL: u32 = 30;
 
 pub const ATTR_DERP: &'static str = "derp";
@@ -101,7 +101,7 @@ impl NodeAnnounce {
         use hickory_proto::rr;
         let zone = rr::Name::from_str(&self.node_id.to_string())?;
         let zone = zone.append_domain(&origin.into())?;
-        let name = rr::Name::parse(IROH_NODE_TXT_NAME, Some(&zone))?;
+        let name = rr::Name::parse(IROH_NODE_TXT_LABEL, Some(&zone))?;
         let txt_value = self.to_attr_string();
         let txt_data = rr::rdata::TXT::new(vec![txt_value]);
         let rdata = rr::RData::TXT(txt_data);
@@ -113,7 +113,7 @@ impl NodeAnnounce {
         use pkarr::dns::{self, rdata};
         let mut packet = dns::Packet::new_reply(0);
         // let name = format!("{}.{}", IROH_NODE_TXT_NAME, self.zone());
-        let name = IROH_NODE_TXT_NAME;
+        let name = IROH_NODE_TXT_LABEL;
         let name = dns::Name::new(&name)?.into_owned();
         let txt_value = self.to_attr_string();
         let txt_data = rdata::TXT::new().with_string(&txt_value)?.into_owned();
@@ -150,7 +150,7 @@ impl NodeAnnounce {
             .iter()
             .find_map(|rr| match &rr.rdata {
                 RData::TXT(txt) => match rr.name.without(&zone) {
-                    Some(name) if &name.to_string() == IROH_NODE_TXT_NAME => Some(txt),
+                    Some(name) if &name.to_string() == IROH_NODE_TXT_LABEL => Some(txt),
                     Some(_) | None => None,
                 },
                 _ => None,
@@ -232,7 +232,7 @@ fn is_hickory_node_info_name(name: &hickory_proto::rr::Name) -> Option<NodeId> {
     }
     let mut labels = name.iter();
     let label = std::str::from_utf8(labels.next().expect("num_labels checked")).ok()?;
-    if label != IROH_NODE_TXT_NAME {
+    if label != IROH_NODE_TXT_LABEL {
         return None;
     }
     let label = std::str::from_utf8(labels.next().expect("num_labels checked")).ok()?;

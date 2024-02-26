@@ -7,7 +7,7 @@ use url::Url;
 use crate::packet::NodeAnnounce;
 
 pub const IROH_TEST_PKARR_RELAY: &'static str = "https://testdns.iroh.link/pkarr";
-pub const LOCALHOST_PKARR_RELAY: &'static str = "http://localhost:8080";
+pub const LOCALHOST_PKARR_RELAY: &'static str = "http://localhost:8080/pkarr";
 
 /// Publisher config
 pub struct Config {
@@ -63,5 +63,9 @@ impl Publisher {
             .relay_put(&self.pkarr_relay, &signed_packet)
             .await?;
         Ok(())
+    }
+
+    pub fn pkarr_relay(&self) -> &Url {
+        &self.pkarr_relay
     }
 }

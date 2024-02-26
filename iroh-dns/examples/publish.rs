@@ -2,12 +2,16 @@ use std::str::FromStr;
 
 use anyhow::{bail, Result};
 use clap::{Parser, ValueEnum};
-use iroh_net::{key::SecretKey, AddrInfo};
+use iroh_net::{key::SecretKey, AddrInfo, NodeId};
 use url::Url;
 
-use iroh_dns::publish::{Config, Publisher};
+use iroh_dns::{
+    packet::IROH_NODE_TXT_LABEL,
+    publish::{Config, Publisher},
+    resolve::{EXAMPLE_DOMAIN, IROH_TEST_DOMAIN},
+};
 
-#[derive(ValueEnum, Clone, Debug, Default)]
+#[derive(ValueEnum, Clone, Debug, Default, Copy)]
 pub enum Env {
     /// Use the irohdns test server at testdns.iroh.link
     #[default]
@@ -22,14 +26,14 @@ pub enum Env {
 #[derive(Parser, Debug)]
 struct Cli {
     /// Environment to publish to.
-    #[clap(value_enum, short, long)]
+    #[clap(value_enum, short, long, default_value_t = Env::IrohTest)]
     env: Env,
     /// Relay URL. If set, the --env option will be ignored.
     #[clap(short, long, conflicts_with = "env")]
     relay: Option<Url>,
     /// Home Derp server to publish for this node
     #[clap(short, long)]
-    home_derp: Url,
+    derp_url: Url,
     /// Create a new node secret if IROH_SECRET is unset. Only for development / debugging.
     #[clap(short, long)]
     create: bool,
@@ -52,7 +56,8 @@ async fn main() -> Result<()> {
         }
     };
     let node_id = secret_key.public();
-    println!("node_id: {node_id}");
+    println!("node: {node_id}");
+    println!("derp: {}", args.derp_url);
     let config = match (args.relay, args.env) {
         (Some(pkarr_relay), _) => Config::new(secret_key, pkarr_relay),
         (None, Env::IrohTest) => Config::with_iroh_test(secret_key),
@@ -61,11 +66,25 @@ async fn main() -> Result<()> {
     let publisher = Publisher::new(config);
 
     let info = AddrInfo {
-        derp_url: Some(args.home_derp),
+        derp_url: Some(args.derp_url),
         direct_addresses: Default::default(),
     };
     // let an = NodeAnnounce::new(node_id, Some(args.home_derp), vec![]);
     publisher.publish_addr_info(&info).await?;
-    println!("published");
+    println!("published signed record to {}!", publisher.pkarr_relay());
+    match args.env {
+        Env::IrohTest => println!(
+            "TXT record resolvable at {}",
+            node_domain(node_id, IROH_TEST_DOMAIN)
+        ),
+        Env::LocalDev => println!(
+            "TXT record resolvable at {}",
+            node_domain(node_id, EXAMPLE_DOMAIN)
+        ),
+    }
     Ok(())
+}
+
+fn node_domain(node_id: NodeId, origin: &str) -> String {
+    format!("{}.{}.{}", IROH_NODE_TXT_LABEL, node_id, origin)
 }

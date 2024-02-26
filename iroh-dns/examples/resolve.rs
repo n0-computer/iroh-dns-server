@@ -14,6 +14,7 @@ pub enum Env {
 
 #[derive(Debug, Parser)]
 struct Cli {
+    #[clap(value_enum, short, long, default_value_t = Env::IrohTest)]
     env: Env,
     #[clap(subcommand)]
     command: Command,
@@ -21,7 +22,9 @@ struct Cli {
 
 #[derive(Debug, Parser)]
 enum Command {
+    /// Resolve node info by node id.
     Node { node_id: NodeId },
+    /// Resolve node info by domain.
     Domain { domain: String },
 }
 
@@ -35,12 +38,17 @@ async fn main() -> anyhow::Result<()> {
     let resolver = Resolver::new(config)?;
     match args.command {
         Command::Node { node_id } => {
-            let res = resolver.resolve_node_by_id(node_id).await?;
-            println!("{res:#?}");
+            let addr = resolver.resolve_node_by_id(node_id).await?;
+            let derp_url = addr.derp_url.map(|u| u.to_string()).unwrap_or_default();
+            println!("node_id:  {node_id}");
+            println!("derp_url: {derp_url}");
         }
         Command::Domain { domain } => {
-            let res = resolver.resolve_node_by_domain(&domain).await?;
-            println!("{res:#?}");
+            let addr = resolver.resolve_node_by_domain(&domain).await?;
+            let node_id = addr.node_id;
+            let derp_url = addr.info.derp_url.map(|u| u.to_string()).unwrap_or_default();
+            println!("node_id:  {node_id}");
+            println!("derp_url: {derp_url}");
         }
     }
     Ok(())
