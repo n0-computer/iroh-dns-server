@@ -1,4 +1,3 @@
-
 use std::{
     borrow::Cow,
     io,
@@ -27,11 +26,17 @@ pub enum CertMode {
 }
 
 impl CertMode {
-    pub async fn build(&self, domain: &str, dir: PathBuf, contact: Option<String>, prod: bool) -> Result<TlsAcceptor> {
+    pub async fn build(
+        &self,
+        domain: &str,
+        dir: PathBuf,
+        contact: Option<String>,
+        prod: bool,
+    ) -> Result<TlsAcceptor> {
         Ok(match self {
             CertMode::Manual => TlsAcceptor::manual(domain, dir).await?,
             CertMode::SelfSigned => TlsAcceptor::self_signed(domain).await?,
-            CertMode::LetsEncrypt=> {
+            CertMode::LetsEncrypt => {
                 let dir = dir.join("acme");
                 let contact = contact.context("contact is required for letsencrypt cert mode")?;
                 tokio::fs::create_dir_all(&dir).await?;

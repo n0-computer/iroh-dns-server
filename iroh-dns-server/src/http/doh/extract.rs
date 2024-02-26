@@ -20,12 +20,12 @@ use hickory_server::{
 };
 use http::{header, request::Parts, HeaderValue, StatusCode};
 use serde::Deserialize;
-use tracing::info;
 use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
     str::FromStr,
 };
+use tracing::info;
 
 use crate::http::error::AppError;
 

@@ -26,15 +26,17 @@ impl From<NodeAnnounce> for NodeAddr {
     fn from(value: NodeAnnounce) -> Self {
         NodeAddr {
             node_id: value.node_id,
-            info: value.into()
+            info: value.into(),
         }
     }
 }
 
 impl From<NodeAnnounce> for AddrInfo {
     fn from(value: NodeAnnounce) -> Self {
-        AddrInfo { derp_url: value.home_derp, direct_addresses: Default::default()}
-        
+        AddrInfo {
+            derp_url: value.home_derp,
+            direct_addresses: Default::default(),
+        }
     }
 }
 

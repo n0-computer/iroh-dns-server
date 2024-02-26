@@ -1,7 +1,10 @@
 use crate::http::error::AppError;
 
 use async_trait::async_trait;
-use axum::{extract::{rejection::JsonRejection, FromRequest, Request}, response::{IntoResponse, Response}};
+use axum::{
+    extract::{rejection::JsonRejection, FromRequest, Request},
+    response::{IntoResponse, Response},
+};
 use http::StatusCode;
 use serde::Serialize;
 

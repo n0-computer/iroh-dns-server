@@ -16,7 +16,7 @@ use hickory_server::{
     resolver::{config::NameServerConfigGroup, Name},
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
     store::{
-        forwarder::{ForwardAuthority, ForwardConfig},
+        // forwarder::{ForwardAuthority, ForwardConfig},
         in_memory::InMemoryAuthority,
     },
 };
@@ -101,8 +101,8 @@ pub struct DnsServer {
     pub authority: Arc<IrohAuthority>,
     // /// The authority that handles all user `_did` DNS TXT record lookups
     // pub user_did_authority: Arc<UserDidsAuthority>,
-    /// The catch-all authority that forwards requests to secondary nameservers
-    pub forwarder: Arc<ForwardAuthority>,
+    // /// The catch-all authority that forwards requests to secondary nameservers
+    // pub forwarder: Arc<ForwardAuthority>,
     // /// The authority handling the `.test` TLD for mocking in tests.
     // /// The idea is that this would *normally* resolve in the
     // /// `ForwardAuthority` in the real world, but we don't want to
@@ -119,8 +119,7 @@ impl std::fmt::Debug for DnsServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DnsState")
             .field("server_did_authority", &"InMemoryAuthority {{ .. }}")
-            // .field("user_did_authority", &self.user_did_authority)
-            .field("forwarder", &"ForwardAuthority {{ .. }}")
+            // .field("forwarder", &"ForwardAuthority {{ .. }}")
             .finish()
     }
 }
@@ -137,7 +136,7 @@ impl DnsServer {
         .into_soa()
         .map_err(|_| anyhow!("Couldn't parse SOA: {}", config.default_soa))?;
         let authority = Arc::new(Self::setup_authority(default_soa.clone(), &config)?);
-        let forwarder = Arc::new(Self::setup_forwarder()?);
+        // let forwarder = Arc::new(Self::setup_forwarder()?);
         // let test_authority = Arc::new(Self::setup_test_authority(default_soa.clone())?);
 
         let catalog = {
@@ -149,14 +148,14 @@ impl DnsServer {
             //     test_authority.origin().clone(),
             //     Box::new(Arc::clone(&test_authority)),
             // );
-            catalog.upsert(Name::root().into(), Box::new(Arc::clone(&forwarder)));
+            // catalog.upsert(Name::root().into(), Box::new(Arc::clone(&forwarder)));
             catalog
         };
 
         Ok(Self {
             authority,
             // test_authority,
-            forwarder,
+            // forwarder,
             catalog: Arc::new(catalog),
             default_ttl: config.default_ttl,
             default_soa,
@@ -188,7 +187,8 @@ impl DnsServer {
             .collect::<Result<Vec<_>>>()?;
         let all_origins = Some(origin.clone())
             .into_iter()
-            .chain(additional_origins.clone().into_iter()).collect::<Vec<_>>();
+            .chain(additional_origins.clone().into_iter())
+            .collect::<Vec<_>>();
 
         let serial = default_soa.serial();
 
@@ -238,17 +238,17 @@ impl DnsServer {
         Ok(authority)
     }
 
-    fn setup_forwarder() -> Result<ForwardAuthority> {
-        let config = ForwardConfig {
-            name_servers: NameServerConfigGroup::cloudflare(),
-            options: None,
-        };
-
-        let forwarder = ForwardAuthority::try_from_config(Name::root(), ZoneType::Forward, &config)
-            .map_err(|e| anyhow!(e))?;
-
-        Ok(forwarder)
-    }
+    // fn setup_forwarder() -> Result<ForwardAuthority> {
+    //     let config = ForwardConfig {
+    //         name_servers: NameServerConfigGroup::cloudflare(),
+    //         options: None,
+    //     };
+    //
+    //     let forwarder = ForwardAuthority::try_from_config(Name::root(), ZoneType::Forward, &config)
+    //         .map_err(|e| anyhow!(e))?;
+    //
+    //     Ok(forwarder)
+    // }
 
     // fn setup_test_authority(default_soa: rdata::SOA) -> Result<InMemoryAuthority> {
     //     let origin = Name::parse("test", Some(&Name::root()))?;
