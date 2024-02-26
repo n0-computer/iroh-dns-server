@@ -42,7 +42,8 @@ impl Default for Config {
                 port: 5353,
                 default_ttl: 900,
                 additional_origins: vec!["iroh.".to_string()],
-                ipv4_addr: Some(Ipv4Addr::LOCALHOST)
+                ipv4_addr: Some(Ipv4Addr::LOCALHOST),
+                ns_name: Some("ns1.irohdns.example.".to_string())
             },
         }
     }

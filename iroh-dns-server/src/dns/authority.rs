@@ -1,3 +1,5 @@
+use std::borrow::Borrow;
+
 use anyhow::{bail, Context};
 use async_trait::async_trait;
 use hickory_proto::{
@@ -33,12 +35,24 @@ pub struct IrohAuthority {
 }
 
 impl IrohAuthority {
-    pub async fn update_records(&self, records: &[Record]) -> bool {
+    pub fn all_origins(&self) -> impl IntoIterator<Item = Name> {
+        let origin = Name::from(self.inner.origin());
+        Some(origin)
+            .iter()
+            .chain(self.additional_origins.iter())
+            .cloned()
+            .collect::<Vec<_>>()
+    }
+    pub async fn update_records(
+        &self,
+        records: impl IntoIterator<Item = impl Borrow<Record>>,
+    ) -> bool {
         let serial: u32 = self.inner.serial().await;
         let mut updated = false;
         for rr in records {
+            let rr: &Record = rr.borrow();
+            debug!(rr = ?rr, ?serial, "insert record");
             updated |= self.inner.upsert(rr.clone(), serial).await;
-            debug!(?rr, ?updated, ?serial, "insert record");
         }
         updated
     }
@@ -46,13 +60,13 @@ impl IrohAuthority {
     pub async fn insert_node_announce(&self, an: NodeAnnounce) -> anyhow::Result<bool> {
         let record = an.into_hickory_dns_record_with_origin(self.origin())?;
         let name = record.name().clone();
-        let updated = self.update_records(&[record]).await;
+        let updated = self.update_records([record]).await;
         for origin in &self.additional_origins {
             let zoned_name = format!("{}.{}", IROH_NODE_TXT_NAME, an.node_id);
             let zoned_name = Name::parse(&zoned_name, Some(origin))?;
             let rdata = RData::CNAME(CNAME(name.clone()));
             let record = Record::from_rdata(zoned_name, DEFAULT_TTL, rdata);
-            let _ = self.update_records(&[record]).await;
+            let _ = self.update_records([record]).await;
         }
         Ok(updated)
     }
@@ -101,9 +115,7 @@ impl Authority for IrohAuthority {
         record_type: RecordType,
         lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
-        info!("LOOKUP {name} {record_type} {lookup_options:?}");
         let res = self.inner.lookup(name, record_type, lookup_options).await;
-        info!("LOOKUP res {res:?}");
         res
     }
 
@@ -112,13 +124,7 @@ impl Authority for IrohAuthority {
         request_info: RequestInfo<'_>,
         lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
-        info!(
-            "SEARCH {:?} {:?} {lookup_options:?}",
-            request_info.header, request_info.query
-        );
-        info!("SEARCH {:#?}", self.inner.records().await);
         let res = self.inner.search(request_info, lookup_options).await;
-        info!("SEARCH res {res:?}");
         res
     }
 
