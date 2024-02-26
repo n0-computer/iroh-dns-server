@@ -36,7 +36,6 @@ async fn main() -> Result<()> {
     };
 
     let cancel = CancellationToken::new();
-    // todo: instrument instead of label.
     let mut tasks = JoinSet::new();
     tasks.spawn(with_span(
         error_span!("http"),
@@ -56,7 +55,7 @@ async fn main() -> Result<()> {
             Err(err) => {
                 error!(?err, "failed");
                 cancel.cancel();
-                if final_res.is_ok() {
+                if !final_res.is_err() {
                     final_res = Err(err);
                 }
             }

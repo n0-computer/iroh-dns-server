@@ -1,15 +1,15 @@
 [http]
-port = 8080
+port = 80
 
 [https]
-port = 8443
+port = 443
 domain = "localhost"
-cert_mode = "self_signed"
+cert_mode = "lets_encrypt"
 letsencrypt_prod = false
 
 [dns]
-port = 5353
+port = 53
 default_soa = "dns1.irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
 default_ttl = 900
 origin = "iroh."
-additional_origins = ["irohdns.example."]
+additional_origins = ["irohdns.example"]

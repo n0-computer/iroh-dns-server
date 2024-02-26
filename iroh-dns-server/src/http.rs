@@ -9,9 +9,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 mod doh;
+mod pkarr;
+mod publish;
+
 mod error;
 mod extract;
-mod publish;
 mod tls;
 
 use crate::state::AppState;
@@ -40,7 +42,8 @@ pub async fn serve(
 ) -> Result<()> {
     let app = Router::new()
         .route("/dns-query", get(doh::get).post(doh::post))
-        .route("/publish", post(publish::post))
+        .route("/pkarr/:key", get(pkarr::get).put(pkarr::put))
+        // .route("/publish", post(publish::post))
         .route("/", get(|| async { "Hello world!" }))
         .with_state(state);
 

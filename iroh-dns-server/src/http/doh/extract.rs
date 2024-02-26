@@ -20,6 +20,7 @@ use hickory_server::{
 };
 use http::{header, request::Parts, HeaderValue, StatusCode};
 use serde::Deserialize;
+use tracing::info;
 use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
@@ -246,6 +247,7 @@ fn decode_request(bytes: &[u8], src_addr: SocketAddr) -> Result<DNSRequest, AppE
 
     match MessageRequest::read(&mut decoder) {
         Ok(message) => {
+            info!("received message {message:?}");
             if message.message_type() != proto::op::MessageType::Query {
                 return Err(AppError::new(
                     StatusCode::BAD_REQUEST,

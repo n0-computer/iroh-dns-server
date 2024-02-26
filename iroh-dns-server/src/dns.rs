@@ -1,13 +1,6 @@
-//! Implementation of the DNS name server for fission infrastructure
+//! Implementation of a DNS name server for iroh node announces
 
-// use crate::{
-//     db::Pool,
-//     dns::{
-//         response_handler::Handle,
-//         user_dids::{did_record_set, record_set, UserDidsAuthority},
-//     },
-// };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use hickory_server::{
@@ -28,11 +21,13 @@ use hickory_server::{
     },
 };
 use iroh_net::NodeId;
+use proto::rr::LowerName;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     io,
     net::{Ipv4Addr, SocketAddrV4},
+    str::FromStr,
     sync::Arc,
     time::Duration,
 };
@@ -44,7 +39,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use url::Url;
 
+use self::authority::IrohAuthority;
+
 mod authority;
+
+pub const IROH_ROOT_ZONE: &'static str = "iroh";
 
 /// DNS server settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -55,10 +54,10 @@ pub struct DnsConfig {
     pub default_soa: String,
     /// Default time to live for returned DNS records (TXT & SOA)
     pub default_ttl: u32,
-    /// Domain used for serving the `_did.<origin>` DNS TXT entry
+    /// Domain used for serving the `_iroh_node.<nodeid>.<origin>` DNS TXT entry
     pub origin: String,
-    // /// Domain used for serving the `_did.<username>.users_origin>` DNS TXT entry
-    // pub users_origin: String,
+    /// Domains where CNAME records will be set on `iroh_node.<nodeid>.origin`
+    pub additional_origins: Vec<String>,
 }
 
 pub async fn serve(
@@ -91,7 +90,7 @@ pub async fn serve(
 #[derive(Clone)]
 pub struct DnsServer {
     /// The authority that handles the server's main `_did` DNS TXT record lookups
-    pub authority: Arc<InMemoryAuthority>,
+    pub authority: Arc<IrohAuthority>,
     // /// The authority that handles all user `_did` DNS TXT record lookups
     // pub user_did_authority: Arc<UserDidsAuthority>,
     /// The catch-all authority that forwards requests to secondary nameservers
@@ -104,6 +103,8 @@ pub struct DnsServer {
     /// The default SOA record used for all zones that this DNS server controls
     pub default_soa: rdata::SOA,
     pub default_ttl: u32,
+
+    pub catalog: Arc<Catalog>,
 }
 
 impl std::fmt::Debug for DnsServer {
@@ -128,16 +129,46 @@ impl DnsServer {
         .into_soa()
         .map_err(|_| anyhow!("Couldn't parse SOA: {}", config.default_soa))?;
 
+        let origin = Name::parse(&config.origin, Some(&Name::root()))?;
+        let additional_origins = config
+            .additional_origins
+            .iter()
+            .map(|o| {
+                Name::parse(&o, Some(&Name::root())).map_err(|e| anyhow!("invalid origin {o}: {e}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let all_origins = Some(origin.clone())
+            .into_iter()
+            .chain(additional_origins.clone().into_iter())
+            .map(|n| LowerName::from(n));
+
+        let authority = Arc::new(Self::setup_authority(
+            origin,
+            default_soa.clone(),
+            additional_origins,
+        )?);
+        let forwarder = Arc::new(Self::setup_forwarder()?);
+        let test_authority = Arc::new(Self::setup_test_authority(default_soa.clone())?);
+
+        let catalog = {
+            let mut catalog = Catalog::new();
+            for origin in all_origins {
+                catalog.upsert(origin, Box::new(Arc::clone(&authority)));
+            }
+            catalog.upsert(
+                test_authority.origin().clone(),
+                Box::new(Arc::clone(&test_authority)),
+            );
+            catalog.upsert(Name::root().into(), Box::new(Arc::clone(&forwarder)));
+            catalog
+        };
+
         Ok(Self {
+            authority,
+            test_authority,
+            forwarder,
+            catalog: Arc::new(catalog),
             default_ttl: config.default_ttl,
-            authority: Arc::new(Self::setup_authority(config, default_soa.clone())?),
-            // user_did_authority: Arc::new(Self::setup_user_did_authority(
-            //     settings,
-            //     // db_pool,
-            //     default_soa.clone(),
-            // )?),
-            forwarder: Arc::new(Self::setup_forwarder()?),
-            test_authority: Arc::new(Self::setup_test_authority(default_soa.clone())?),
             default_soa,
         })
     }
@@ -145,6 +176,7 @@ impl DnsServer {
     /// Handle a DNS request
     pub async fn answer_request(&self, request: Request) -> Result<Bytes> {
         tracing::info!(?request, "Got DNS request");
+        println!("request {request:#?}");
 
         let (tx, mut rx) = broadcast::channel(1);
         let response_handle = Handle(tx);
@@ -155,19 +187,13 @@ impl DnsServer {
         Ok(rx.recv().await?)
     }
 
-    pub async fn publish_home_derp(&self, node_id: NodeId, home_derp: Url) -> Result<()> {
-        let ttl = self.default_ttl;
-        let serial = self.default_soa.serial();
-        let name = home_derp_record_name(node_id, self.authority.origin())?;
-        let rset = home_derp_record_set(&name, home_derp, serial, ttl)?;
-        let rrkey = RrKey::new(name.into(), RecordType::TXT);
-        let mut records = self.authority.records_mut().await;
-        records.insert(rrkey, Arc::new(rset));
-        Ok(())
-    }
-
-    fn setup_authority(config: &DnsConfig, default_soa: rdata::SOA) -> Result<InMemoryAuthority> {
-        let origin = Name::parse(&config.origin, Some(&Name::root()))?;
+    fn setup_authority(
+        origin: Name,
+        default_soa: rdata::SOA,
+        additional_origins: Vec<Name>,
+    ) -> Result<IrohAuthority> {
+        // // let origin = Name::parse(&config.origin, Some(&Name::root()))?;
+        // let origin = Name::parse(IROH_ROOT_ZONE, Some(&Name::root()))?;
         let serial = default_soa.serial();
         let authority = InMemoryAuthority::new(
             origin.clone(),
@@ -184,6 +210,11 @@ impl DnsServer {
             false,
         )
         .map_err(|e| anyhow!(e))?;
+
+        let authority = IrohAuthority {
+            inner: authority,
+            additional_origins,
+        };
 
         Ok(authority)
     }
@@ -241,20 +272,7 @@ impl RequestHandler for DnsServer {
         request: &Request,
         response_handle: R,
     ) -> ResponseInfo {
-        // A catalog is very light-weight. Just a hashmap.
-        // Shouldn't be a big cost to initialize for requests.
-        let mut catalog = Catalog::new();
-        catalog.upsert(
-            self.authority.origin().clone(),
-            Box::new(Arc::clone(&self.authority)),
-        );
-        catalog.upsert(
-            self.test_authority.origin().clone(),
-            Box::new(Arc::clone(&self.test_authority)),
-        );
-        catalog.upsert(Name::root().into(), Box::new(Arc::clone(&self.forwarder)));
-
-        catalog.handle_request(request, response_handle).await
+        self.catalog.handle_request(request, response_handle).await
     }
 }
 
@@ -286,23 +304,6 @@ impl ResponseHandler for Handle {
 
         Ok(info)
     }
-}
-
-pub(crate) fn home_derp_record_name(node_id: NodeId, origin: impl Into<Name>) -> Result<Name> {
-    let name = Name::parse(&node_id.to_string(), Some(&origin.into()))?;
-    let name = Name::parse("_home_derp", Some(&name))?;
-    Ok(name)
-}
-
-pub(crate) fn home_derp_record_set(
-    name: &Name,
-    home_derp: Url,
-    serial: u32,
-    ttl: u32,
-) -> Result<RecordSet> {
-    let txt_value = home_derp.to_string();
-    let record = Record::from_rdata(name.clone(), ttl, RData::TXT(TXT::new(vec![txt_value])));
-    Ok(record_set(&name, RecordType::TXT, serial, record))
 }
 
 /// Create a record set with a single record inside
