@@ -1,6 +1,10 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{io, net::Ipv4Addr, path::Path};
+use std::{
+    env, io,
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     dns::DnsConfig,
@@ -20,6 +24,18 @@ impl Config {
             .with_context(|| format!("failed to read {}", path.as_ref().to_string_lossy()))?;
         let config: Config = toml::from_str(&s)?;
         Ok(config)
+    }
+
+    pub fn data_dir() -> Result<PathBuf> {
+        let dir = if let Some(val) = env::var_os("IROH_DNS_DATA_DIR") {
+            PathBuf::from(val)
+        } else {
+            let path = dirs_next::data_dir().ok_or_else(|| {
+                anyhow!("operating environment provides no directory for application data")
+            })?;
+            path.join("iroh-dns")
+        };
+        Ok(dir)
     }
 }
 
@@ -43,7 +59,7 @@ impl Default for Config {
                 default_ttl: 900,
                 additional_origins: vec!["iroh.".to_string()],
                 ipv4_addr: Some(Ipv4Addr::LOCALHOST),
-                ns_name: Some("ns1.irohdns.example.".to_string())
+                ns_name: Some("ns1.irohdns.example.".to_string()),
             },
         }
     }

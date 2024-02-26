@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::routing::post;
 use axum::{routing::get, Router};
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,7 @@ mod error;
 mod extract;
 mod tls;
 
+use crate::config::Config;
 use crate::state::AppState;
 
 pub use self::tls::CertMode;
@@ -62,11 +63,15 @@ pub async fn serve(
     // launch https
     if let Some(config) = https_config {
         let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, config.port));
-        let cert_mode = tls::CertMode::SelfSigned;
         info!("HTTPS server listening on {addr}");
         let acceptor = {
-            let cache_path = PathBuf::from("./cert-cache");
-            cert_mode
+            let cache_path = Config::data_dir()?
+                .join("cert_cache")
+                .join(config.cert_mode.to_string());
+            tokio::fs::create_dir_all(&cache_path).await
+                .with_context(|| format!("failed to create cert cache dir at {cache_path:?}"))?;
+            config
+                .cert_mode
                 .build(
                     &config.domain,
                     cache_path,

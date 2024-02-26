@@ -18,7 +18,7 @@ use tokio_rustls_acme::{axum::AxumAcceptor, caches::DirCache, AcmeConfig};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info_span, Instrument};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, strum::Display)]
 #[serde(rename_all = "snake_case")]
 pub enum CertMode {
     Manual,
