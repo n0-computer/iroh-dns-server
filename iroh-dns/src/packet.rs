@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display, str::FromStr};
 // use hickory_proto::rr::Name;
 use anyhow::{anyhow, bail, Result};
 use hickory_proto::error::ProtoError;
-use iroh_net::NodeId;
+use iroh_net::{AddrInfo, NodeAddr, NodeId};
 use url::Url;
 
 pub const IROH_ROOT_ZONE: &'static str = "iroh";
@@ -20,6 +20,22 @@ pub struct NodeAnnounce {
     #[debug("{:?}", self.home_derp.as_ref().map(|s| s.to_string()))]
     pub home_derp: Option<Url>,
     pub home_dns: Vec<String>,
+}
+
+impl From<NodeAnnounce> for NodeAddr {
+    fn from(value: NodeAnnounce) -> Self {
+        NodeAddr {
+            node_id: value.node_id,
+            info: value.into()
+        }
+    }
+}
+
+impl From<NodeAnnounce> for AddrInfo {
+    fn from(value: NodeAnnounce) -> Self {
+        AddrInfo { derp_url: value.home_derp, direct_addresses: Default::default()}
+        
+    }
 }
 
 impl NodeAnnounce {

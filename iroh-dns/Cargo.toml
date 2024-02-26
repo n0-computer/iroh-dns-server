@@ -9,6 +9,7 @@ edition = "2021"
 anyhow = "1.0.80"
 derive_more = { version = "1.0.0-beta.1", features = ["debug", "display"] }
 ed25519-dalek = { version = "2.1.1", features = ["pkcs8"] }
+futures = "0.3.30"
 hex = "0.4.3"
 hickory-client = { version = "0.24.0", features = ["rustls", "serde", "webpki-roots", "dns-over-https", "dnssec"] }
 hickory-proto = { version = "0.24.0", features = ["dnssec", "ring"] }
