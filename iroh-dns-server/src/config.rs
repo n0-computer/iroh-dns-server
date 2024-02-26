@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{io, path::Path};
+use std::{io, net::Ipv4Addr, path::Path};
 
 use crate::{
     dns::DnsConfig,
@@ -38,10 +38,11 @@ impl Default for Config {
                 default_soa:
                     "dns1.irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
                         .to_string(),
-                origin: "iroh.".to_string(),
+                origin: "irohdns.example.".to_string(),
                 port: 5353,
                 default_ttl: 900,
-                additional_origins: vec!["irohdns.example.".to_string()],
+                additional_origins: vec!["iroh.".to_string()],
+                ipv4_addr: Some(Ipv4Addr::LOCALHOST)
             },
         }
     }

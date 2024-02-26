@@ -58,6 +58,7 @@ pub struct DnsConfig {
     pub origin: String,
     /// Domains where CNAME records will be set on `iroh_node.<nodeid>.origin`
     pub additional_origins: Vec<String>,
+    pub ipv4_addr: Option<Ipv4Addr>,
 }
 
 pub async fn serve(
@@ -68,7 +69,9 @@ pub async fn serve(
     const TCP_TIMEOUT: Duration = Duration::from_millis(1000);
     let mut server = hickory_server::ServerFuture::new(dns_server);
 
-    let ip4_addr = Ipv4Addr::new(127, 0, 0, 1);
+    let ip4_addr = config
+        .ipv4_addr
+        .unwrap_or_else(|| Ipv4Addr::new(127, 0, 0, 1));
     let sock_addr = SocketAddrV4::new(ip4_addr, config.port);
 
     server.register_socket(UdpSocket::bind(sock_addr).await?);
@@ -146,6 +149,7 @@ impl DnsServer {
             origin,
             default_soa.clone(),
             additional_origins,
+            config.ipv4_addr,
         )?);
         let forwarder = Arc::new(Self::setup_forwarder()?);
         let test_authority = Arc::new(Self::setup_test_authority(default_soa.clone())?);
@@ -191,25 +195,32 @@ impl DnsServer {
         origin: Name,
         default_soa: rdata::SOA,
         additional_origins: Vec<Name>,
+        ipv4_addr: Option<Ipv4Addr>,
     ) -> Result<IrohAuthority> {
         // // let origin = Name::parse(&config.origin, Some(&Name::root()))?;
         // let origin = Name::parse(IROH_ROOT_ZONE, Some(&Name::root()))?;
         let serial = default_soa.serial();
-        let authority = InMemoryAuthority::new(
-            origin.clone(),
-            BTreeMap::from([(
-                RrKey::new(origin.clone().into(), RecordType::SOA),
-                record_set(
-                    &origin,
-                    RecordType::SOA,
-                    serial,
-                    Record::from_rdata(origin.clone(), 1209600, RData::SOA(default_soa)),
-                ),
-            )]),
-            ZoneType::Primary,
-            false,
-        )
-        .map_err(|e| anyhow!(e))?;
+        let mut records = BTreeMap::from([(
+            RrKey::new(origin.clone().into(), RecordType::SOA),
+            record_set(
+                &origin,
+                RecordType::SOA,
+                serial,
+                Record::from_rdata(origin.clone(), 1209600, RData::SOA(default_soa)),
+            ),
+        )]);
+        if let Some(addr) = ipv4_addr {
+            let key = RrKey::new(origin.clone().into(), RecordType::A);
+            let record_set = record_set(
+                &origin,
+                RecordType::A,
+                serial,
+                Record::from_rdata(origin.clone(), 900, RData::A(addr.into())),
+            );
+            records.insert(key, record_set);
+        }
+        let authority = InMemoryAuthority::new(origin.clone(), records, ZoneType::Primary, false)
+            .map_err(|e| anyhow!(e))?;
 
         let authority = IrohAuthority {
             inner: authority,

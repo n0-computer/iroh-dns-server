@@ -11,5 +11,5 @@ letsencrypt_prod = false
 port = 53
 default_soa = "dns1.irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
 default_ttl = 900
-origin = "iroh."
-additional_origins = ["irohdns.example"]
+origin = "irohdns.example."
+additional_origins = ["iroh."]
