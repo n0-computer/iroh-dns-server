@@ -8,7 +8,7 @@ use anyhow::{bail, Result};
 use async_trait::async_trait;
 use hickory_proto::{
     op::ResponseCode,
-    rr::{LowerName, Name, Record, RecordSet, RecordType},
+    rr::{LowerName, Name, Record, RecordType},
 };
 use hickory_server::{
     authority::{
@@ -22,6 +22,8 @@ use iroh_dns::packet::{NodeAnnounce, IROH_NODE_TXT_LABEL};
 use iroh_net::NodeId;
 use pkarr::SignedPacket;
 use tracing::debug;
+
+use super::record_set;
 
 struct NodeState {
     signed_packet: SignedPacket,
@@ -97,7 +99,8 @@ impl NodeAuthority {
             }
             hash_map::Entry::Occupied(mut entry) => {
                 let node_id = entry.get().announce.node_id;
-                if entry.get().signed_packet.timestamp() < signed_packet.timestamp() {
+                let existing = &entry.get().signed_packet;
+                if signed_packet.more_recent_than(existing) {
                     let state = NodeState::try_from_signed_packet(signed_packet)?;
                     let node_id = state.announce.node_id;
                     entry.insert(state);
@@ -105,6 +108,25 @@ impl NodeAuthority {
                 } else {
                     Ok((node_id, false))
                 }
+            }
+        }
+    }
+
+    pub async fn resolve_record_for_node(
+        &self,
+        node_id: &str,
+        origin: &Name,
+    ) -> Result<Option<Record>, LookupError> {
+        match self.announces.read().get(node_id) {
+            Some(state) => {
+                // todo: cache?
+                let record = state
+                    .into_record(&origin)
+                    .map_err(|_| LookupError::from(ResponseCode::Refused))?;
+                Ok(Some(record))
+            }
+            None => {
+                Ok(None)
             }
         }
     }
@@ -149,23 +171,14 @@ impl Authority for NodeAuthority {
                 if !self.allowed_origin(&origin) {
                     return Err(LookupError::from(ResponseCode::NXDomain));
                 }
-                if let Some(state) = self.announces.read().get(&node_id) {
-                    // todo: cache
-                    let record = state
-                        .into_record(&origin)
-                        .map_err(|_| LookupError::from(ResponseCode::Refused))?;
-                    let mut record_set =
-                        RecordSet::new(record.name(), record.record_type(), self.serial());
-                    record_set.insert(record, self.serial());
-                    let answers = LookupRecords::Records {
-                        lookup_options,
-                        records: Arc::new(record_set),
-                    };
-                    let additionals = None;
-                    let answers = AuthLookup::answers(answers, additionals);
-                    Ok(answers)
-                } else {
-                    Err(LookupError::from(ResponseCode::NXDomain))
+                match self.resolve_record_for_node(&node_id, &origin).await? {
+                    Some(record) => {
+                        let record_set = record_set(self.serial(), record);
+                        let records = LookupRecords::new(lookup_options, Arc::new(record_set));
+                        let answers = AuthLookup::answers(records, None);
+                        Ok(answers)
+                    }
+                    None => Err(LookupError::from(ResponseCode::NXDomain)),
                 }
             }
             _ => {

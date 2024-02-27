@@ -241,17 +241,15 @@ impl ResponseHandler for Handle {
     }
 }
 
-// /// Create a record set with a single record inside
-// pub(crate) fn record_set(
-//     name: &Name,
-//     record_type: RecordType,
-//     serial: u32,
-//     record: Record,
-// ) -> RecordSet {
-//     let mut record_set = RecordSet::new(name, record_type, serial);
-//     record_set.insert(record, serial);
-//     record_set
-// }
+/// Create a record set with a single record inside
+pub(crate) fn record_set(
+    serial: u32,
+    record: Record,
+) -> RecordSet {
+    let mut record_set = RecordSet::new(record.name(), record.record_type(), serial);
+    record_set.insert(record, serial);
+    record_set
+}
 
 fn push_record(records: &mut BTreeMap<RrKey, RecordSet>, serial: u32, record: Record) {
     let key = RrKey::new(record.name().clone().into(), record.record_type());
