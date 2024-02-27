@@ -13,7 +13,6 @@ use hickory_server::{
     authority::MessageRequest,
     proto::{
         self,
-        rr::RecordType,
         serialize::binary::{BinDecodable, BinDecoder, BinEncodable, BinEncoder},
     },
     server::{Protocol, Request as DNSRequest},

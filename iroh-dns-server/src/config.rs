@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
-    env, io,
+    env,
     net::Ipv4Addr,
     path::{Path, PathBuf},
 };

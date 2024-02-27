@@ -1,6 +1,6 @@
 //! Implementation of a DNS name server for iroh node announces
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use hickory_server::{
@@ -8,23 +8,22 @@ use hickory_server::{
     proto::{
         self,
         rr::{
-            rdata::{self, TXT},
+            rdata::{self},
             RData, Record, RecordSet, RecordType, RrKey,
         },
         serialize::{binary::BinEncoder, txt::RDataParser},
     },
-    resolver::{config::NameServerConfigGroup, Name},
+    resolver::{Name},
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
     store::in_memory::InMemoryAuthority,
 };
-use iroh_net::NodeId;
+
 use proto::rr::LowerName;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     io,
     net::{Ipv4Addr, SocketAddrV4},
-    str::FromStr,
     sync::Arc,
     time::Duration,
 };
@@ -34,7 +33,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use url::Url;
+
 
 use self::node_authority::NodeAuthority;
 
