@@ -13,7 +13,7 @@ use hickory_server::{
         },
         serialize::{binary::BinEncoder, txt::RDataParser},
     },
-    resolver::{Name},
+    resolver::Name,
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
     store::in_memory::InMemoryAuthority,
 };
@@ -33,7 +33,6 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-
 
 use self::node_authority::NodeAuthority;
 
