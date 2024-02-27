@@ -15,10 +15,7 @@ use hickory_server::{
     },
     resolver::{config::NameServerConfigGroup, Name},
     server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
-    store::{
-        // forwarder::{ForwardAuthority, ForwardConfig},
-        in_memory::InMemoryAuthority,
-    },
+    store::in_memory::InMemoryAuthority,
 };
 use iroh_net::NodeId;
 use proto::rr::LowerName;
@@ -39,11 +36,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use url::Url;
 
-use self::authority::IrohAuthority;
+use self::node_authority::NodeAuthority;
 
-mod authority;
-
-pub const IROH_ROOT_ZONE: &'static str = "iroh";
+mod node_authority;
 
 pub const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 12h
 pub const DEFAULT_SOA_TTL: u32 = 60 * 60 * 24 * 12; // 14d
@@ -97,30 +92,16 @@ pub async fn serve(
 /// State for serving DNS
 #[derive(Clone)]
 pub struct DnsServer {
-    /// The authority that handles the server's main `_did` DNS TXT record lookups
-    pub authority: Arc<IrohAuthority>,
-    // /// The authority that handles all user `_did` DNS TXT record lookups
-    // pub user_did_authority: Arc<UserDidsAuthority>,
-    // /// The catch-all authority that forwards requests to secondary nameservers
-    // pub forwarder: Arc<ForwardAuthority>,
-    // /// The authority handling the `.test` TLD for mocking in tests.
-    // /// The idea is that this would *normally* resolve in the
-    // /// `ForwardAuthority` in the real world, but we don't want to
-    // /// depend on that functionality in unit tests.
-    // pub test_authority: Arc<InMemoryAuthority>,
+    pub authority: Arc<NodeAuthority>,
     /// The default SOA record used for all zones that this DNS server controls
     pub default_soa: rdata::SOA,
     pub default_ttl: u32,
-
     pub catalog: Arc<Catalog>,
 }
 
 impl std::fmt::Debug for DnsServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DnsState")
-            .field("server_did_authority", &"InMemoryAuthority {{ .. }}")
-            // .field("forwarder", &"ForwardAuthority {{ .. }}")
-            .finish()
+        f.debug_struct("DnsServer").finish()
     }
 }
 
@@ -136,26 +117,17 @@ impl DnsServer {
         .into_soa()
         .map_err(|_| anyhow!("Couldn't parse SOA: {}", config.default_soa))?;
         let authority = Arc::new(Self::setup_authority(default_soa.clone(), &config)?);
-        // let forwarder = Arc::new(Self::setup_forwarder()?);
-        // let test_authority = Arc::new(Self::setup_test_authority(default_soa.clone())?);
 
         let catalog = {
             let mut catalog = Catalog::new();
             for origin in authority.all_origins() {
                 catalog.upsert(LowerName::from(origin), Box::new(Arc::clone(&authority)));
             }
-            // catalog.upsert(
-            //     test_authority.origin().clone(),
-            //     Box::new(Arc::clone(&test_authority)),
-            // );
-            // catalog.upsert(Name::root().into(), Box::new(Arc::clone(&forwarder)));
             catalog
         };
 
         Ok(Self {
             authority,
-            // test_authority,
-            // forwarder,
             catalog: Arc::new(catalog),
             default_ttl: config.default_ttl,
             default_soa,
@@ -165,7 +137,6 @@ impl DnsServer {
     /// Handle a DNS request
     pub async fn answer_request(&self, request: Request) -> Result<Bytes> {
         tracing::info!(?request, "Got DNS request");
-        println!("request {request:#?}");
 
         let (tx, mut rx) = broadcast::channel(1);
         let response_handle = Handle(tx);
@@ -176,7 +147,8 @@ impl DnsServer {
         Ok(rx.recv().await?)
     }
 
-    fn setup_authority(default_soa: rdata::SOA, config: &DnsConfig) -> Result<IrohAuthority> {
+    fn setup_authority(default_soa: rdata::SOA, config: &DnsConfig) -> Result<NodeAuthority> {
+        let serial = default_soa.serial();
         let origin = Name::parse(&config.origin, Some(&Name::root()))?;
         let additional_origins = config
             .additional_origins
@@ -190,15 +162,12 @@ impl DnsServer {
             .chain(additional_origins.clone().into_iter())
             .collect::<Vec<_>>();
 
-        let serial = default_soa.serial();
-
         let mut records = BTreeMap::new();
         push_record(
             &mut records,
             serial,
             Record::from_rdata(origin.clone(), DEFAULT_SOA_TTL, RData::SOA(default_soa)),
         );
-
         if let Some(addr) = config.ipv4_addr {
             for name in &all_origins {
                 push_record(
@@ -223,65 +192,14 @@ impl DnsServer {
                 );
             }
         }
-        // let ns = &origin;
-        // let all_origins = Some(origin.clone())
-        //     .into_iter()
-        //     .chain(additional_origins.clone().into_iter());
-        let authority = InMemoryAuthority::new(origin.clone(), records, ZoneType::Primary, false)
-            .map_err(|e| anyhow!(e))?;
+        let static_authority =
+            InMemoryAuthority::new(origin.clone(), records, ZoneType::Primary, false)
+                .map_err(|e| anyhow!(e))?;
 
-        let authority = IrohAuthority {
-            inner: authority,
-            additional_origins: additional_origins.clone(),
-        };
+        let authority = NodeAuthority::new(static_authority, origin, additional_origins, serial);
 
         Ok(authority)
     }
-
-    // fn setup_forwarder() -> Result<ForwardAuthority> {
-    //     let config = ForwardConfig {
-    //         name_servers: NameServerConfigGroup::cloudflare(),
-    //         options: None,
-    //     };
-    //
-    //     let forwarder = ForwardAuthority::try_from_config(Name::root(), ZoneType::Forward, &config)
-    //         .map_err(|e| anyhow!(e))?;
-    //
-    //     Ok(forwarder)
-    // }
-
-    // fn setup_test_authority(default_soa: rdata::SOA) -> Result<InMemoryAuthority> {
-    //     let origin = Name::parse("test", Some(&Name::root()))?;
-    //     let serial = default_soa.serial();
-    //     InMemoryAuthority::new(
-    //         origin.clone(),
-    //         BTreeMap::from([(
-    //             RrKey::new(origin.clone().into(), RecordType::SOA),
-    //             record_set(
-    //                 &origin,
-    //                 RecordType::SOA,
-    //                 serial,
-    //                 Record::from_rdata(origin.clone(), 1209600, RData::SOA(default_soa)),
-    //             ),
-    //         )]),
-    //         ZoneType::Primary,
-    //         false,
-    //     )
-    //     .map_err(|e| anyhow!(e))
-    // }
-    //
-    // /// Add a DNS record under `<subdomain>.test.`
-    // pub async fn set_test_record(
-    //     &self,
-    //     subdomain: &str,
-    //     record_type: RecordType,
-    //     rset: RecordSet,
-    // ) -> Result<()> {
-    //     let name = Name::parse(subdomain, Some(&self.test_authority.origin().into()))?;
-    //     let mut records = self.test_authority.records_mut().await;
-    //     records.insert(RrKey::new(name.into(), record_type), Arc::new(rset));
-    //     Ok(())
-    // }
 }
 
 #[async_trait::async_trait]

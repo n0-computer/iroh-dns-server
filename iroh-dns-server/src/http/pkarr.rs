@@ -29,13 +29,14 @@ pub async fn put(
         )
     })?;
 
-    let an = NodeAnnounce::from_pkarr_signed_packet(signed_packet)?;
-    info!(?an, "put node announce via pkarr");
-    let _updated = state.dns_server.authority.insert_node_announce(an).await?;
+    let (node_id, updated) = state.dns_server.authority.upsert_pkarr(signed_packet)?;
+    info!(?node_id, ?updated, "pkarr upsert");
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn get(State(_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+    // todo: implement pkarr relay get
+    // let body = state.authority.announces.get(node_id).signed_packet.to_bytes()
     Ok(AppError::new(
         StatusCode::SERVICE_UNAVAILABLE,
         Some("unimplemented"),

@@ -46,7 +46,11 @@ async fn main() -> anyhow::Result<()> {
         Command::Domain { domain } => {
             let addr = resolver.resolve_node_by_domain(&domain).await?;
             let node_id = addr.node_id;
-            let derp_url = addr.info.derp_url.map(|u| u.to_string()).unwrap_or_default();
+            let derp_url = addr
+                .info
+                .derp_url
+                .map(|u| u.to_string())
+                .unwrap_or_default();
             println!("node_id:  {node_id}");
             println!("derp_url: {derp_url}");
         }

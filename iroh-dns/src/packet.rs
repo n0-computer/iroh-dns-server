@@ -91,16 +91,16 @@ impl NodeAnnounce {
     pub fn into_hickory_dns_record(&self) -> Result<hickory_proto::rr::Record> {
         use hickory_proto::rr;
         let origin = rr::Name::from_str(IROH_ROOT_ZONE)?;
-        self.into_hickory_dns_record_with_origin(origin)
+        self.into_hickory_dns_record_with_origin(&origin)
     }
 
     pub fn into_hickory_dns_record_with_origin(
         &self,
-        origin: impl Into<hickory_proto::rr::Name>,
+        origin: &hickory_proto::rr::Name,
     ) -> Result<hickory_proto::rr::Record> {
         use hickory_proto::rr;
         let zone = rr::Name::from_str(&self.node_id.to_string())?;
-        let zone = zone.append_domain(&origin.into())?;
+        let zone = zone.append_domain(&origin)?;
         let name = rr::Name::parse(IROH_NODE_TXT_LABEL, Some(&zone))?;
         let txt_value = self.to_attr_string();
         let txt_data = rr::rdata::TXT::new(vec![txt_value]);
@@ -138,7 +138,7 @@ impl NodeAnnounce {
         Ok(signed_packet)
     }
 
-    pub fn from_pkarr_signed_packet(packet: pkarr::SignedPacket) -> Result<Self> {
+    pub fn from_pkarr_signed_packet(packet: &pkarr::SignedPacket) -> Result<Self> {
         use pkarr::dns::{self, rdata::RData};
         let pubkey = packet.public_key();
         let pubkey_z32 = pubkey.to_z32();
@@ -292,7 +292,7 @@ mod tests {
         let sp = an.into_pkarr_signed_packet(&signing_key)?;
         println!("sp {sp:#?}");
         println!("packet {:#?}", sp.packet());
-        let an2 = NodeAnnounce::from_pkarr_signed_packet(sp)?;
+        let an2 = NodeAnnounce::from_pkarr_signed_packet(&sp)?;
         assert_eq!(an, an2);
         let _p = an.into_hickory_answers_message()?;
         Ok(())
