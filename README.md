@@ -1,4 +1,4 @@
-# iroh-dns
+# iroh-dns-server
 
 This repository contains:
 
