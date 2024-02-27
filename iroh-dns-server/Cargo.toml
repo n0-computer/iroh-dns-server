@@ -21,7 +21,7 @@ hickory-server = { version = "0.24.0", features = ["dns-over-rustls"] }
 http = "1.0.0"
 iroh-net = "0.12.0"
 iroh-dns = { path = "../iroh-dns" }
-pkarr = { git = "https://github.com/Frando/pkarr.git", branch = "iroh-fixes", features = ["async", "relay"], default_features = false }
+pkarr = { version = "1.1.1", features = ["async", "relay"], default_features = false }
 rcgen = "0.12.1"
 regex = "1.10.3"
 rustls = "0.21"

@@ -2623,8 +2623,9 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "1.0.5"
-source = "git+https://github.com/Frando/pkarr.git?branch=iroh-fixes#4540a2802363df91cb189bd73c2d208d2c176344"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bff6873180b2a43f312c5111da7a0ecaa519243aa8fe154bb61f8ebaafd4171"
 dependencies = [
  "bytes",
  "ed25519-dalek",
