@@ -83,7 +83,7 @@ impl TlsAcceptor {
         let config = rustls::ServerConfig::builder()
             .with_safe_defaults()
             .with_no_client_auth();
-        let keyname = escape_hostname(&hostname);
+        let keyname = escape_hostname(hostname);
         let cert_path = dir.join(format!("{keyname}.crt"));
         let key_path = dir.join(format!("{keyname}.key"));
 

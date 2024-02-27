@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use hickory_server::{
-    authority::{Authority, AuthorityObject, Catalog, MessageResponse, ZoneType},
+    authority::{Catalog, MessageResponse, ZoneType},
     proto::{
         self,
         rr::{
@@ -115,7 +115,7 @@ impl DnsServer {
         )?
         .into_soa()
         .map_err(|_| anyhow!("Couldn't parse SOA: {}", config.default_soa))?;
-        let authority = Arc::new(Self::setup_authority(default_soa.clone(), &config)?);
+        let authority = Arc::new(Self::setup_authority(default_soa.clone(), config)?);
 
         let catalog = {
             let mut catalog = Catalog::new();
@@ -153,12 +153,12 @@ impl DnsServer {
             .additional_origins
             .iter()
             .map(|o| {
-                Name::parse(&o, Some(&Name::root())).map_err(|e| anyhow!("invalid origin {o}: {e}"))
+                Name::parse(o, Some(&Name::root())).map_err(|e| anyhow!("invalid origin {o}: {e}"))
             })
             .collect::<Result<Vec<_>>>()?;
         let all_origins = Some(origin.clone())
             .into_iter()
-            .chain(additional_origins.clone().into_iter())
+            .chain(additional_origins.clone())
             .collect::<Vec<_>>();
 
         let mut records = BTreeMap::new();
@@ -178,13 +178,13 @@ impl DnsServer {
         }
 
         if let Some(ns_name) = &config.ns_name {
-            let ns = Name::parse(&ns_name, Some(&Name::root()))?;
+            let ns = Name::parse(ns_name, Some(&Name::root()))?;
             for name in &all_origins {
                 push_record(
                     &mut records,
                     serial,
                     Record::from_rdata(
-                        name.clone().into(),
+                        name.clone(),
                         DEFAULT_NS_TTL,
                         RData::NS(rdata::NS(ns.clone())),
                     ),

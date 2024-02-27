@@ -214,7 +214,7 @@ fn parse_iroh_node_name(name: &Name) -> Result<(String, Name)> {
         bail!("last label must be _iroh_node");
     }
     let node_id = labels.next().expect("just checked");
-    let node_id = std::str::from_utf8(&node_id)?.to_string();
+    let node_id = std::str::from_utf8(node_id)?.to_string();
     let rest = Name::from_labels(labels)?;
     Ok((node_id, rest))
 }

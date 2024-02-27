@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     let config = if let Some(path) = args.config {
-        Config::load(&path)?
+        Config::load(path)?
     } else {
         Config::default()
     };
@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
             Err(err) => {
                 error!(?err, "failed");
                 cancel.cancel();
-                if !final_res.is_err() {
+                if final_res.is_ok() {
                     final_res = Err(err);
                 }
             }
