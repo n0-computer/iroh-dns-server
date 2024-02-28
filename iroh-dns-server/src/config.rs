@@ -37,6 +37,10 @@ impl Config {
         };
         Ok(dir)
     }
+
+    pub fn signed_packet_store_path() -> Result<PathBuf> {
+        Ok(Self::data_dir()?.join("signed-packets-1.db"))
+    }
 }
 
 impl Default for Config {

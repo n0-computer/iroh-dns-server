@@ -7,6 +7,7 @@ use http::StatusCode;
 
 use tracing::info;
 
+use crate::dns::PacketSource;
 use crate::state::AppState;
 
 use super::error::AppError;
@@ -18,6 +19,7 @@ pub async fn put(
 ) -> Result<impl IntoResponse, AppError> {
     let key = pkarr::PublicKey::try_from(key.as_str())
         .map_err(|e| AppError::new(StatusCode::BAD_REQUEST, Some(format!("invalid key: {e}"))))?;
+    let label = &key.to_z32()[..10];
     let signed_packet = pkarr::SignedPacket::from_relay_response(key, body).map_err(|e| {
         AppError::new(
             StatusCode::BAD_REQUEST,
@@ -25,8 +27,11 @@ pub async fn put(
         )
     })?;
 
-    let (node_id, updated) = state.dns_server.authority.upsert_pkarr(signed_packet)?;
-    info!(?node_id, ?updated, "pkarr upsert");
+    let updated = state
+        .dns_server
+        .authority
+        .upsert_pkarr(signed_packet, PacketSource::PkarrPublish)?;
+    info!(key = %label, ?updated, "pkarr upsert");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -38,16 +43,3 @@ pub async fn get(State(_state): State<AppState>) -> Result<impl IntoResponse, Ap
         Some("unimplemented"),
     ))
 }
-
-// fn simple_dns_to_hickory(
-//     signed_packet: &pkarr::SignedPacket,
-// ) -> Result<hickory_proto::op::Message> {
-//     let encoded = signed_packet.encoded_packet();
-//     println!("encoded {} {}", encoded.len(), hex::encode(&encoded));
-//     let parsed1 = pkarr::dns::Packet::parse(&encoded)?;
-//     println!("simpdns {parsed1:#?}");
-//     let parsed2 = hickory_proto::op::Message::from_bytes(&encoded)?;
-//     println!("hickory {parsed2:#?}");
-//     Ok(parsed2)
-// }
-//

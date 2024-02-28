@@ -1,6 +1,5 @@
 use std::{
-    borrow::Borrow,
-    collections::{hash_map, HashMap},
+    collections::{btree_map, BTreeMap},
     sync::Arc,
 };
 
@@ -8,7 +7,7 @@ use anyhow::{bail, Result};
 use async_trait::async_trait;
 use hickory_proto::{
     op::ResponseCode,
-    rr::{LowerName, Name, Record, RecordType},
+    rr::{LowerName, Name, RecordSet, RecordType, RrKey},
 };
 use hickory_server::{
     authority::{
@@ -18,117 +17,128 @@ use hickory_server::{
     server::RequestInfo,
     store::in_memory::InMemoryAuthority,
 };
-use iroh_dns::packet::{NodeAnnounce, IROH_NODE_TXT_LABEL};
-use iroh_net::NodeId;
+
+use parking_lot::RwLock;
 use pkarr::SignedPacket;
 use tracing::debug;
 
-use super::record_set;
+use crate::store::SignedPacketStore;
+use crate::util::{record_set_append_origin, signed_packet_to_hickory_records_without_origin};
 
-struct NodeState {
-    signed_packet: SignedPacket,
-    announce: NodeAnnounce,
+pub enum PacketSource {
+    PkarrPublish,
+    Mainline,
 }
 
-impl NodeState {
-    pub fn try_from_signed_packet(signed_packet: SignedPacket) -> Result<Self> {
-        let announce = NodeAnnounce::from_pkarr_signed_packet(&signed_packet)?;
-        Ok(Self {
-            announce,
-            signed_packet,
-        })
-    }
-}
-
-impl NodeState {
-    fn into_record(&self, origin: &Name) -> Result<Record> {
-        self.announce.into_hickory_dns_record_with_origin(origin)
-    }
-}
+pub type PublicKeyBytes = [u8; 32];
 
 pub struct NodeAuthority {
-    // TODO: persist
-    static_authority: InMemoryAuthority,
-    announces: parking_lot::RwLock<HashMap<String, NodeState>>,
-    origin: LowerName,
-    additional_origins: Vec<Name>,
     serial: u32,
+    origin: LowerName,
+    allowed_origins: Vec<Name>,
+
+    store: SignedPacketStore,
+    static_authority: InMemoryAuthority,
+    zones: RwLock<BTreeMap<PublicKeyBytes, PkarrZone>>,
+}
+
+struct PkarrZone {
+    timestamp: u64,
+    records: BTreeMap<RrKey, RecordSet>,
+}
+impl PkarrZone {
+    fn from_signed_packet(signed_packet: &SignedPacket) -> Result<Self> {
+        let (_label, records) =
+            signed_packet_to_hickory_records_without_origin(signed_packet, |_| true)?;
+        Ok(Self {
+            records,
+            timestamp: *signed_packet.timestamp(),
+        })
+    }
+
+    fn older_than(&self, signed_packet: &SignedPacket) -> bool {
+        *signed_packet.timestamp() > self.timestamp
+    }
+
+    fn records(&self) -> &BTreeMap<RrKey, RecordSet> {
+        &self.records
+    }
 }
 
 impl NodeAuthority {
     pub fn new(
+        store: SignedPacketStore,
         static_authority: InMemoryAuthority,
         origin: Name,
-        additional_origins: Vec<Name>,
+        mut additional_origins: Vec<Name>,
         serial: u32,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        additional_origins.push(origin.clone());
+        let this = Self {
             static_authority,
             origin: origin.into(),
-            additional_origins,
+            allowed_origins: additional_origins,
             serial,
-            announces: Default::default(),
+            store,
+            zones: Default::default(),
+        };
+        for packet in this.store.iter()? {
+            let packet = packet?;
+            this.upsert_pkarr_zone(&packet)?;
         }
+        Ok(this)
     }
     pub fn all_origins(&self) -> impl IntoIterator<Item = Name> {
-        let origin = Name::from(self.origin());
-        Some(origin)
-            .iter()
-            .chain(self.additional_origins.iter())
-            .cloned()
-            .collect::<Vec<_>>()
+        self.allowed_origins.clone()
     }
 
-    pub fn allowed_origin(&self, origin: &Name) -> bool {
-        let our_origin: &Name = self.origin.borrow();
-        our_origin == origin || self.additional_origins.contains(origin)
+    pub fn origin_is_allowed(&self, origin: &Name) -> bool {
+        self.allowed_origins.contains(origin)
     }
 
     pub fn serial(&self) -> u32 {
         self.serial
     }
 
-    pub fn upsert_pkarr(&self, signed_packet: SignedPacket) -> Result<(NodeId, bool)> {
-        let id = iroh_base::base32::fmt(signed_packet.public_key().to_bytes());
-        match self.announces.write().entry(id) {
-            hash_map::Entry::Vacant(entry) => {
-                let state = NodeState::try_from_signed_packet(signed_packet)?;
-                let node_id = state.announce.node_id;
-                entry.insert(state);
-                Ok((node_id, true))
+    // todo: less clones
+    pub fn resolve_pkarr(
+        &self,
+        public_key: &pkarr::PublicKey,
+        name: &Name,
+        record_type: RecordType,
+    ) -> Option<RecordSet> {
+        let key = RrKey::new(name.into(), record_type);
+        self.zones
+            .read()
+            .get(&public_key.to_bytes())
+            .and_then(|zone| zone.records().get(&key))
+            .cloned()
+    }
+
+    pub fn upsert_pkarr(&self, signed_packet: SignedPacket, _source: PacketSource) -> Result<bool> {
+        let updated = self.upsert_pkarr_zone(&signed_packet)?;
+        if updated {
+            self.store.upsert(signed_packet)?;
+        }
+        Ok(updated)
+    }
+
+    fn upsert_pkarr_zone(&self, signed_packet: &SignedPacket) -> Result<bool> {
+        let key = signed_packet.public_key().to_bytes();
+        let mut updated = false;
+        match self.zones.write().entry(key) {
+            btree_map::Entry::Vacant(e) => {
+                e.insert(PkarrZone::from_signed_packet(signed_packet)?);
+                updated = true;
             }
-            hash_map::Entry::Occupied(mut entry) => {
-                let node_id = entry.get().announce.node_id;
-                let existing = &entry.get().signed_packet;
-                if signed_packet.more_recent_than(existing) {
-                    let state = NodeState::try_from_signed_packet(signed_packet)?;
-                    let node_id = state.announce.node_id;
-                    entry.insert(state);
-                    Ok((node_id, true))
-                } else {
-                    Ok((node_id, false))
+            btree_map::Entry::Occupied(mut e) => {
+                if e.get().older_than(&signed_packet) {
+                    e.insert(PkarrZone::from_signed_packet(signed_packet)?);
+                    updated = true;
                 }
             }
         }
-    }
-
-    pub async fn resolve_record_for_node(
-        &self,
-        node_id: &str,
-        origin: &Name,
-    ) -> Result<Option<Record>, LookupError> {
-        match self.announces.read().get(node_id) {
-            Some(state) => {
-                // todo: cache?
-                let record = state
-                    .into_record(&origin)
-                    .map_err(|_| LookupError::from(ResponseCode::Refused))?;
-                Ok(Some(record))
-            }
-            None => {
-                Ok(None)
-            }
-        }
+        Ok(updated)
     }
 }
 
@@ -160,31 +170,40 @@ impl Authority for NodeAuthority {
         lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
         match record_type {
-            RecordType::TXT => {
-                let name2: Name = name.into();
-                let Ok((node_id, origin)) = parse_iroh_node_name(&name2) else {
-                    return self
-                        .static_authority
-                        .lookup(name, record_type, lookup_options)
-                        .await;
-                };
-                if !self.allowed_origin(&origin) {
-                    return Err(LookupError::from(ResponseCode::NXDomain));
-                }
-                match self.resolve_record_for_node(&node_id, &origin).await? {
-                    Some(record) => {
-                        let record_set = record_set(self.serial(), record);
-                        let records = LookupRecords::new(lookup_options, Arc::new(record_set));
-                        let answers = AuthLookup::answers(records, None);
-                        Ok(answers)
-                    }
-                    None => Err(LookupError::from(ResponseCode::NXDomain)),
-                }
-            }
-            _ => {
+            RecordType::SOA | RecordType::NS => {
                 self.static_authority
                     .lookup(name, record_type, lookup_options)
                     .await
+            }
+            _ => {
+                let name2: Name = name.into();
+                match split_and_parse_pkarr(&name2, &self.allowed_origins) {
+                    Err(err) => {
+                        debug!("name {name2} does not match pkarr: {err}");
+                        self.static_authority
+                            .lookup(name, record_type, lookup_options)
+                            .await
+                    }
+                    Ok((name, pkey, origin)) => {
+                        match self.resolve_pkarr(&pkey, &name, record_type) {
+                            Some(pkarr_set) => {
+                                let new_origin = Name::parse(&pkey.to_z32(), Some(&origin))
+                                    .expect("just parsed");
+                                let record_set = record_set_append_origin(
+                                    &pkarr_set,
+                                    &new_origin,
+                                    self.serial(),
+                                )
+                                .expect("just parsed");
+                                let records =
+                                    LookupRecords::new(lookup_options, Arc::new(record_set));
+                                let answers = AuthLookup::answers(records, None);
+                                Ok(answers)
+                            }
+                            None => Err(LookupError::from(ResponseCode::NXDomain)),
+                        }
+                    }
+                }
             }
         }
     }
@@ -217,17 +236,23 @@ impl Authority for NodeAuthority {
     }
 }
 
-fn parse_iroh_node_name(name: &Name) -> Result<(String, Name)> {
-    if name.num_labels() < 2 {
-        bail!("name must have at least 2 label");
+fn split_and_parse_pkarr(
+    name: &Name,
+    allowed_origins: &Vec<Name>,
+) -> Result<(Name, pkarr::PublicKey, Name)> {
+    for origin in allowed_origins.iter() {
+        if !origin.zone_of(name) {
+            continue;
+        }
+        if name.num_labels() < origin.num_labels() + 1 {
+            bail!("invalid name");
+        }
+        let labels = name.iter().rev();
+        let mut labels_without_origin = labels.skip(origin.num_labels() as usize);
+        let pkey_label = labels_without_origin.next().expect("just checked");
+        let pkey = pkarr::PublicKey::try_from(std::str::from_utf8(pkey_label)?)?;
+        let remaining_name = Name::from_labels(labels_without_origin)?;
+        return Ok((remaining_name, pkey, origin.clone()));
     }
-    let mut labels = name.iter();
-    let marker = labels.next().expect("just checked");
-    if marker != IROH_NODE_TXT_LABEL.as_bytes() {
-        bail!("last label must be _iroh_node");
-    }
-    let node_id = labels.next().expect("just checked");
-    let node_id = std::str::from_utf8(node_id)?.to_string();
-    let rest = Name::from_labels(labels)?;
-    Ok((node_id, rest))
+    bail!("name does not match any origin");
 }

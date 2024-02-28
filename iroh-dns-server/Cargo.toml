@@ -5,6 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["mainline-dht"]
+mainline-dht = ["pkarr/dht"]
+
 [dependencies]
 anyhow = "1.0.80"
 async-trait = "0.1.77"
@@ -22,6 +26,7 @@ http = "1.0.0"
 iroh-net = { git = "https://github.com/n0-computer/iroh.git", branch = "feat/dns" }
 iroh-dns = { git = "https://github.com/n0-computer/iroh.git", branch = "feat/dns" }
 pkarr = { version = "1.1.1", features = ["async", "relay"], default_features = false }
+# pkarr = { path = "../../pkarr/pkarr", features = ["async", "relay"], default_features = false }
 rcgen = "0.12.1"
 regex = "1.10.3"
 rustls = "0.21"
@@ -40,3 +45,5 @@ dirs-next = "2.0.0"
 strum = { version = "0.26.1", features = ["derive"] }
 iroh-base = { version = "0.12.0", features = ["base32"] }
 parking_lot = "0.12.1"
+ttl_cache = "0.5.1"
+redb = { git = "https://github.com/cberner/redb.git"}

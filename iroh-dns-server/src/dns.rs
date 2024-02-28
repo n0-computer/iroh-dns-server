@@ -37,6 +37,9 @@ use tracing::info;
 use self::node_authority::NodeAuthority;
 
 mod node_authority;
+pub use node_authority::PacketSource;
+use crate::config::Config;
+use crate::store::SignedPacketStore;
 
 pub const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 12h
 pub const DEFAULT_SOA_TTL: u32 = 60 * 60 * 24 * 12; // 14d
@@ -114,7 +117,8 @@ impl DnsServer {
         )?
         .into_soa()
         .map_err(|_| anyhow!("Couldn't parse SOA: {}", config.default_soa))?;
-        let authority = Arc::new(Self::setup_authority(default_soa.clone(), config)?);
+        let store = SignedPacketStore::open_file(Config::signed_packet_store_path()?)?;
+        let authority = Arc::new(Self::setup_authority(store, default_soa.clone(), config)?);
 
         let catalog = {
             let mut catalog = Catalog::new();
@@ -145,7 +149,7 @@ impl DnsServer {
         Ok(rx.recv().await?)
     }
 
-    fn setup_authority(default_soa: rdata::SOA, config: &DnsConfig) -> Result<NodeAuthority> {
+    fn setup_authority(store: SignedPacketStore, default_soa: rdata::SOA, config: &DnsConfig) -> Result<NodeAuthority> {
         let serial = default_soa.serial();
         let origin = Name::parse(&config.origin, Some(&Name::root()))?;
         let additional_origins = config
@@ -194,7 +198,7 @@ impl DnsServer {
             InMemoryAuthority::new(origin.clone(), records, ZoneType::Primary, false)
                 .map_err(|e| anyhow!(e))?;
 
-        let authority = NodeAuthority::new(static_authority, origin, additional_origins, serial);
+        let authority = NodeAuthority::new(store, static_authority, origin, additional_origins, serial)?;
 
         Ok(authority)
     }
@@ -239,16 +243,6 @@ impl ResponseHandler for Handle {
 
         Ok(info)
     }
-}
-
-/// Create a record set with a single record inside
-pub(crate) fn record_set(
-    serial: u32,
-    record: Record,
-) -> RecordSet {
-    let mut record_set = RecordSet::new(record.name(), record.record_type(), serial);
-    record_set.insert(record, serial);
-    record_set
 }
 
 fn push_record(records: &mut BTreeMap<RrKey, RecordSet>, serial: u32, record: Record) {
