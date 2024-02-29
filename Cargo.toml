@@ -2,5 +2,5 @@
 resolver = "2"
 members = ["iroh-dns-server"]
 
-[patch.crates-io]
-pkarr = { path = "../pkarr/pkarr" }
+# [patch.crates-io]
+# pkarr = { path = "../pkarr/pkarr" }
