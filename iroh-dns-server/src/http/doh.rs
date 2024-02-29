@@ -17,11 +17,7 @@ use http::{
 
 use crate::state::AppState;
 
-use super::{
-    // app_state::AppState,
-    error::AppResult,
-    // setups::ServerSetup,
-};
+use super::error::AppResult;
 
 mod extract;
 mod response;

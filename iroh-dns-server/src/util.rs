@@ -1,4 +1,4 @@
-use std::collections::{btree_map, BTreeMap};
+use std::{collections::{btree_map, BTreeMap}, sync::Arc};
 
 use anyhow::Result;
 use hickory_proto::{
@@ -17,11 +17,11 @@ pub fn signed_packet_to_hickory_message(signed_packet: &SignedPacket) -> Result<
 pub fn signed_packet_to_hickory_records_without_origin(
     signed_packet: &SignedPacket,
     filter: impl Fn(&Record) -> bool,
-    ) -> Result<(Label, BTreeMap<RrKey, RecordSet>)> {
+    ) -> Result<(Label, BTreeMap<RrKey, Arc<RecordSet>>)> {
     let common_zone = Label::from_utf8(&signed_packet.public_key().to_z32())?;
     let mut message = signed_packet_to_hickory_message(signed_packet)?;
     let answers = message.take_answers();
-    let mut output: BTreeMap<RrKey, RecordSet> = BTreeMap::new();
+    let mut output: BTreeMap<RrKey, Arc<RecordSet>> = BTreeMap::new();
     for mut record in answers.into_iter() {
         // disallow SOA and NS records
         if matches!(record.record_type(), RecordType::SOA | RecordType::NS) {
@@ -47,12 +47,13 @@ pub fn signed_packet_to_hickory_records_without_origin(
         match output.entry(rrkey) {
             btree_map::Entry::Vacant(e) => {
                 let set: RecordSet = record.into();
-                e.insert(set);
+                e.insert(Arc::new(set));
             }
             btree_map::Entry::Occupied(mut e) => {
                 let set = e.get_mut();
                 let serial = set.serial();
-                set.insert(record, serial);
+                // safe because we just created the arc and are sync iterating
+                Arc::get_mut(set).unwrap().insert(record, serial);
             }
         }
     }

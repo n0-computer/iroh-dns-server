@@ -1,5 +1,6 @@
 use std::{
     collections::{btree_map, BTreeMap},
+    fmt,
     sync::Arc,
 };
 
@@ -20,7 +21,7 @@ use hickory_server::{
 
 use parking_lot::RwLock;
 use pkarr::SignedPacket;
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::store::SignedPacketStore;
 use crate::util::{record_set_append_origin, signed_packet_to_hickory_records_without_origin};
@@ -34,8 +35,8 @@ pub type PublicKeyBytes = [u8; 32];
 
 pub struct NodeAuthority {
     serial: u32,
-    origin: LowerName,
-    allowed_origins: Vec<Name>,
+    primary_origin: LowerName,
+    all_origins: Vec<Name>,
 
     store: SignedPacketStore,
     static_authority: InMemoryAuthority,
@@ -44,7 +45,7 @@ pub struct NodeAuthority {
 
 struct PkarrZone {
     timestamp: u64,
-    records: BTreeMap<RrKey, RecordSet>,
+    records: BTreeMap<RrKey, Arc<RecordSet>>,
 }
 impl PkarrZone {
     fn from_signed_packet(signed_packet: &SignedPacket) -> Result<Self> {
@@ -60,7 +61,7 @@ impl PkarrZone {
         *signed_packet.timestamp() > self.timestamp
     }
 
-    fn records(&self) -> &BTreeMap<RrKey, RecordSet> {
+    fn records(&self) -> &BTreeMap<RrKey, Arc<RecordSet>> {
         &self.records
     }
 }
@@ -69,15 +70,20 @@ impl NodeAuthority {
     pub fn new(
         store: SignedPacketStore,
         static_authority: InMemoryAuthority,
-        origin: Name,
-        mut additional_origins: Vec<Name>,
+        primary_origin: Name,
+        additional_origins: Vec<Name>,
         serial: u32,
     ) -> Result<Self> {
-        additional_origins.push(origin.clone());
+        let origins = {
+            let mut o = Vec::with_capacity(additional_origins.len());
+            o.push(primary_origin.clone());
+            o.extend_from_slice(&additional_origins);
+            o
+        };
         let this = Self {
             static_authority,
-            origin: origin.into(),
-            allowed_origins: additional_origins,
+            primary_origin: primary_origin.into(),
+            all_origins: origins,
             serial,
             store,
             zones: Default::default(),
@@ -88,12 +94,12 @@ impl NodeAuthority {
         }
         Ok(this)
     }
-    pub fn all_origins(&self) -> impl IntoIterator<Item = Name> {
-        self.allowed_origins.clone()
+    pub fn all_origins(&self) -> impl Iterator<Item = &Name> {
+        self.all_origins.iter()
     }
 
     pub fn origin_is_allowed(&self, origin: &Name) -> bool {
-        self.allowed_origins.contains(origin)
+        self.all_origins.contains(origin)
     }
 
     pub fn serial(&self) -> u32 {
@@ -106,13 +112,13 @@ impl NodeAuthority {
         public_key: &pkarr::PublicKey,
         name: &Name,
         record_type: RecordType,
-    ) -> Option<RecordSet> {
+    ) -> Option<Arc<RecordSet>> {
         let key = RrKey::new(name.into(), record_type);
         self.zones
             .read()
             .get(&public_key.to_bytes())
             .and_then(|zone| zone.records().get(&key))
-            .cloned()
+            .map(|set| Arc::clone(set))
     }
 
     pub fn upsert_pkarr(&self, signed_packet: SignedPacket, _source: PacketSource) -> Result<bool> {
@@ -121,6 +127,10 @@ impl NodeAuthority {
             self.store.upsert(signed_packet)?;
         }
         Ok(updated)
+    }
+
+    pub fn store(&self) -> &SignedPacketStore {
+        &self.store
     }
 
     fn upsert_pkarr_zone(&self, signed_packet: &SignedPacket) -> Result<bool> {
@@ -160,7 +170,7 @@ impl Authority for NodeAuthority {
 
     /// Get the origin of this zone, i.e. example.com is the origin for www.example.com
     fn origin(&self) -> &LowerName {
-        &self.origin
+        &self.primary_origin
     }
 
     async fn lookup(
@@ -177,7 +187,7 @@ impl Authority for NodeAuthority {
             }
             _ => {
                 let name2: Name = name.into();
-                match split_and_parse_pkarr(&name2, &self.allowed_origins) {
+                match split_and_parse_pkarr(&name2, &self.all_origins) {
                     Err(err) => {
                         debug!("name {name2} does not match pkarr: {err}");
                         self.static_authority
@@ -185,22 +195,23 @@ impl Authority for NodeAuthority {
                             .await
                     }
                     Ok((name, pkey, origin)) => {
+                        debug!("name {name2} resolved to ({name}) ({pkey}) ({origin})");
                         match self.resolve_pkarr(&pkey, &name, record_type) {
                             Some(pkarr_set) => {
                                 let new_origin = Name::parse(&pkey.to_z32(), Some(&origin))
-                                    .expect("just parsed");
+                                    .map_err(err_refused)?;
                                 let record_set = record_set_append_origin(
                                     &pkarr_set,
                                     &new_origin,
                                     self.serial(),
                                 )
-                                .expect("just parsed");
+                                .map_err(err_refused)?;
                                 let records =
                                     LookupRecords::new(lookup_options, Arc::new(record_set));
                                 let answers = AuthLookup::answers(records, None);
                                 Ok(answers)
                             }
-                            None => Err(LookupError::from(ResponseCode::NXDomain)),
+                            None => Err(err_nx_domain("not found")),
                         }
                     }
                 }
@@ -240,19 +251,31 @@ fn split_and_parse_pkarr(
     name: &Name,
     allowed_origins: &Vec<Name>,
 ) -> Result<(Name, pkarr::PublicKey, Name)> {
+    trace!("resolve {name}");
     for origin in allowed_origins.iter() {
+        trace!("try {origin}");
         if !origin.zone_of(name) {
             continue;
         }
         if name.num_labels() < origin.num_labels() + 1 {
             bail!("invalid name");
         }
+        trace!("parse {origin}");
         let labels = name.iter().rev();
         let mut labels_without_origin = labels.skip(origin.num_labels() as usize);
-        let pkey_label = labels_without_origin.next().expect("just checked");
+        let pkey_label = labels_without_origin.next().expect("length checked above");
         let pkey = pkarr::PublicKey::try_from(std::str::from_utf8(pkey_label)?)?;
         let remaining_name = Name::from_labels(labels_without_origin)?;
         return Ok((remaining_name, pkey, origin.clone()));
     }
     bail!("name does not match any origin");
+}
+
+fn err_refused(e: impl fmt::Debug) -> LookupError {
+    trace!("lookup failed (refused): {e:?}");
+    LookupError::from(ResponseCode::Refused)
+}
+fn err_nx_domain(e: impl fmt::Debug) -> LookupError {
+    trace!("lookup failed (nxdomain): {e:?}");
+    LookupError::from(ResponseCode::NXDomain)
 }

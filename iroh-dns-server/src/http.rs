@@ -1,19 +1,25 @@
-use anyhow::{Context, Result};
-
-use axum::{routing::get, Router};
-use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, SocketAddr};
 
+use anyhow::{bail, Context, Result};
+use axum::{
+    extract::ConnectInfo,
+    http::{Method, Request},
+    routing::get,
+    Router,
+};
+use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tower_http::{
+    cors::{self, CorsLayer},
+    trace::TraceLayer,
+};
+use tracing::{info, span, Level};
 
 mod doh;
-mod pkarr;
-mod publish;
-
 mod error;
 mod extract;
+mod pkarr;
 mod tls;
 
 use crate::config::Config;
@@ -41,12 +47,43 @@ pub async fn serve(
     state: AppState,
     cancel: CancellationToken,
 ) -> Result<()> {
-    let app = Router::new()
+    if http_config.is_none() && https_config.is_none() {
+        bail!("Either http or https config is required");
+    }
+
+    // configure routes
+    let router = Router::new()
         .route("/dns-query", get(doh::get).post(doh::post))
         .route("/pkarr/:key", get(pkarr::get).put(pkarr::put))
-        // .route("/publish", post(publish::post))
-        .route("/", get(|| async { "Hello world!" }))
+        .route("/healthcheck", get(|| async { "OK" }))
+        .route("/", get(|| async { "Hi!" }))
         .with_state(state);
+
+    // configure cors middleware
+    let cors = CorsLayer::new()
+        // allow `GET` and `POST` when accessing the resource
+        .allow_methods([Method::GET, Method::POST, Method::PUT])
+        // allow requests from any origin
+        .allow_origin(cors::Any);
+
+    // configure tracing middleware
+    let trace = TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {
+        let conn_info = request
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .expect("connectinfo extension to be present");
+        let span = span!(
+        Level::DEBUG,
+            "http_request",
+            method = ?request.method(),
+            uri = ?request.uri(),
+            src = %conn_info.0,
+        );
+        span
+    });
+
+    // configure app
+    let app = router.layer(cors).layer(trace);
 
     let mut tasks = JoinSet::new();
 

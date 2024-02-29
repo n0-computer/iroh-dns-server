@@ -3,7 +3,7 @@ use axum::extract::Path;
 use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 
-use http::StatusCode;
+use http::{header, StatusCode};
 
 use tracing::info;
 
@@ -35,11 +35,22 @@ pub async fn put(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn get(State(_state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+pub async fn get(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let key = pkarr::PublicKey::try_from(key.as_str())
+        .map_err(|e| AppError::new(StatusCode::BAD_REQUEST, Some(format!("invalid key: {e}"))))?;
+    let Some(signed_packet) = state.dns_server.authority.store().get(&key)? else {
+        return Err(AppError::with_status(StatusCode::NOT_FOUND));
+    };
+    let body = signed_packet.as_relay_request();
+    let headers = [(header::CONTENT_TYPE, "application/x-pkarr-signed-packet")];
+    Ok((headers, body))
     // todo: implement pkarr relay get
     // let body = state.authority.announces.get(node_id).signed_packet.to_bytes()
-    Ok(AppError::new(
-        StatusCode::SERVICE_UNAVAILABLE,
-        Some("unimplemented"),
-    ))
+    // Ok(AppError::new(
+    //     StatusCode::SERVICE_UNAVAILABLE,
+    //     Some("unimplemented"),
+    // ))
 }

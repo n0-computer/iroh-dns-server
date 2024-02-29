@@ -41,8 +41,8 @@ pub use node_authority::PacketSource;
 use crate::config::Config;
 use crate::store::SignedPacketStore;
 
-pub const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 12h
-pub const DEFAULT_SOA_TTL: u32 = 60 * 60 * 24 * 12; // 14d
+pub const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 14h
+pub const DEFAULT_SOA_TTL: u32 = 60 * 60 * 24 * 1; // 14d
 pub const DEFAULT_A_TTL: u32 = 60 * 60; // 1h
 
 /// DNS server settings

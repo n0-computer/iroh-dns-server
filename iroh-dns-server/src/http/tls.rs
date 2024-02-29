@@ -29,18 +29,17 @@ impl CertMode {
     pub async fn build(
         &self,
         domain: &str,
-        dir: PathBuf,
-        contact: Option<String>,
-        prod: bool,
+        cert_cache: PathBuf,
+        letsencrypt_contact: Option<String>,
+        letsencrypt_prod: bool,
     ) -> Result<TlsAcceptor> {
         Ok(match self {
-            CertMode::Manual => TlsAcceptor::manual(domain, dir).await?,
+            CertMode::Manual => TlsAcceptor::manual(domain, cert_cache).await?,
             CertMode::SelfSigned => TlsAcceptor::self_signed(domain).await?,
             CertMode::LetsEncrypt => {
-                let dir = dir.join("acme");
-                let contact = contact.context("contact is required for letsencrypt cert mode")?;
-                tokio::fs::create_dir_all(&dir).await?;
-                TlsAcceptor::letsencrypt(domain, &contact, prod, dir)?
+                let contact =
+                    letsencrypt_contact.context("contact is required for letsencrypt cert mode")?;
+                TlsAcceptor::letsencrypt(domain, &contact, letsencrypt_prod, cert_cache)?
             }
         })
     }
@@ -87,14 +86,12 @@ impl TlsAcceptor {
         let cert_path = dir.join(format!("{keyname}.crt"));
         let key_path = dir.join(format!("{keyname}.key"));
 
-        println!("here");
         let (certs, secret_key) = tokio::task::spawn_blocking(move || {
             let certs = load_certs(cert_path)?;
             let key = load_secret_key(key_path)?;
             anyhow::Ok((certs, key))
         })
         .await??;
-        println!("there");
 
         let config = config.with_single_cert(certs, secret_key)?;
         let config = Arc::new(config);

@@ -25,8 +25,12 @@ impl Default for AppError {
 }
 
 impl AppError {
+    pub fn with_status(status: StatusCode) -> AppError {
+        Self { status, detail: None }
+    }
+
     /// Create a new [`AppError`].
-    pub fn new<M: ToString>(status_code: StatusCode, message: Option<M>) -> AppError {
+    pub fn new(status_code: StatusCode, message: Option<impl ToString>) -> AppError {
         Self {
             status: status_code,
             // title: Self::canonical_reason_to_string(&status_code),

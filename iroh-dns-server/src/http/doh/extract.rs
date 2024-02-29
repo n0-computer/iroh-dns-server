@@ -133,7 +133,7 @@ where
                 handle_dns_json_query(parts, state, src_addr).await
             }
             None => handle_dns_message_query(parts, state, src_addr).await,
-            _ => Err(AppError::new::<String>(StatusCode::NOT_ACCEPTABLE, None)),
+            _ => Err(AppError::with_status(StatusCode::NOT_ACCEPTABLE)),
         }
     }
 }
@@ -154,7 +154,7 @@ where
 
         let body = Bytes::from_request(req, state)
             .await
-            .map_err(|_| AppError::new::<String>(StatusCode::INTERNAL_SERVER_ERROR, None))?;
+            .map_err(|_| AppError::with_status(StatusCode::INTERNAL_SERVER_ERROR))?;
 
         let request = decode_request(&body, src_addr)?;
 
