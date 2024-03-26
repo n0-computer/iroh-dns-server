@@ -20,6 +20,7 @@ mod doh;
 mod error;
 mod extract;
 mod pkarr;
+mod rate_limiting;
 mod tls;
 
 use crate::config::Config;
@@ -78,12 +79,14 @@ pub async fn serve(
             method = ?request.method(),
             uri = ?request.uri(),
             src = %conn_info.0,
-        );
+            );
         span
     });
 
+    let rate_limit = rate_limiting::create();
+
     // configure app
-    let app = router.layer(cors).layer(trace);
+    let app = router.layer(cors).layer(rate_limit).layer(trace);
 
     let mut tasks = JoinSet::new();
 
