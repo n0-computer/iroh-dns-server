@@ -27,7 +27,7 @@ pub fn create() -> GovernorLayer<'static, PeerIpKeyExtractor, NoOpMiddleware<Qua
     // a separate background task to clean up
     std::thread::spawn(move || loop {
         std::thread::sleep(interval);
-        tracing::info!("rate limiting storage size: {}", governor_limiter.len());
+        tracing::debug!("rate limiting storage size: {}", governor_limiter.len());
         governor_limiter.retain_recent();
     });
     let layer = GovernorLayer {

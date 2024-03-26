@@ -3,6 +3,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use anyhow::{bail, Context, Result};
 use axum::{
     extract::ConnectInfo,
+    handler::Handler,
     http::{Method, Request},
     routing::get,
     Router,
@@ -52,14 +53,6 @@ pub async fn serve(
         bail!("Either http or https config is required");
     }
 
-    // configure routes
-    let router = Router::new()
-        .route("/dns-query", get(doh::get).post(doh::post))
-        .route("/pkarr/:key", get(pkarr::get).put(pkarr::put))
-        .route("/healthcheck", get(|| async { "OK" }))
-        .route("/", get(|| async { "Hi!" }))
-        .with_state(state);
-
     // configure cors middleware
     let cors = CorsLayer::new()
         // allow `GET` and `POST` when accessing the resource
@@ -83,10 +76,24 @@ pub async fn serve(
         span
     });
 
+    // configure rate limiting middleware
     let rate_limit = rate_limiting::create();
 
+    // configure routes
+    //
+    // only the pkarr::put route gets a rate limit
+    let router = Router::new()
+        .route("/dns-query", get(doh::get).post(doh::post))
+        .route(
+            "/pkarr/:key",
+            get(pkarr::get).put(pkarr::put.layer(rate_limit)),
+        )
+        .route("/healthcheck", get(|| async { "OK" }))
+        .route("/", get(|| async { "Hi!" }))
+        .with_state(state);
+
     // configure app
-    let app = router.layer(cors).layer(rate_limit).layer(trace);
+    let app = router.layer(cors).layer(trace);
 
     let mut tasks = JoinSet::new();
 

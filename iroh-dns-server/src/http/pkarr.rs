@@ -47,10 +47,4 @@ pub async fn get(
     let body = signed_packet.as_relay_request();
     let headers = [(header::CONTENT_TYPE, "application/x-pkarr-signed-packet")];
     Ok((headers, body))
-    // todo: implement pkarr relay get
-    // let body = state.authority.announces.get(node_id).signed_packet.to_bytes()
-    // Ok(AppError::new(
-    //     StatusCode::SERVICE_UNAVAILABLE,
-    //     Some("unimplemented"),
-    // ))
 }
