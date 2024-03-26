@@ -5,6 +5,8 @@ use axum::{routing::get, Router};
 use clap::Parser;
 use futures::{Future, FutureExt};
 use iroh_dns_server::{self as server, config::Config, dns::DnsServer, state::AppState};
+use iroh_metrics::metrics::start_metrics_server;
+use server::metrics::init_metrics;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use tokio::task::JoinSet;
@@ -28,7 +30,8 @@ async fn main() -> Result<()> {
     } else {
         Config::default()
     };
-    // println!("{}", toml::to_string(&config)?);
+
+    init_metrics();
 
     let dns_server = DnsServer::new(&config.dns)?;
     let state = AppState {
@@ -39,12 +42,24 @@ async fn main() -> Result<()> {
     let mut tasks = JoinSet::new();
     tasks.spawn(with_span(
         error_span!("http"),
-        server::http::serve(config.http, config.https, state, cancel.clone()),
+        server::http::serve(
+            config.http.clone(),
+            config.https.clone(),
+            state,
+            cancel.clone(),
+        ),
     ));
     tasks.spawn(with_span(
         error_span!("dns"),
-        server::dns::serve(config.dns, dns_server, cancel.clone()),
+        server::dns::serve(config.dns.clone(), dns_server, cancel.clone()),
     ));
+
+    if let Some(addr) = config.metrics_addr() {
+        tasks.spawn(with_span(
+            error_span!("metrics"),
+            start_metrics_server(addr),
+        ));
+    }
 
     let mut final_res = Ok(());
     while let Some(next) = tasks.join_next().await {

@@ -1849,6 +1849,7 @@ dependencies = [
  "hickory-resolver",
  "hickory-server",
  "http 1.1.0",
+ "iroh-metrics 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "iroh-net",
  "parking_lot",
  "pkarr",
@@ -1858,6 +1859,7 @@ dependencies = [
  "rustls",
  "rustls-pemfile 1.0.4",
  "serde",
+ "struct_iterable",
  "strum 0.26.2",
  "tokio",
  "tokio-rustls",
@@ -1884,6 +1886,27 @@ dependencies = [
  "pin-project",
  "smallvec",
  "tokio",
+]
+
+[[package]]
+name = "iroh-metrics"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4b29ecbd3a1581e5b73c59cdff20225690f5eed32f293728563a0d06c2c91fe"
+dependencies = [
+ "anyhow",
+ "erased_set",
+ "http-body-util",
+ "hyper 1.2.0",
+ "hyper-util",
+ "once_cell",
+ "prometheus-client",
+ "reqwest",
+ "serde",
+ "struct_iterable",
+ "time",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1934,7 +1957,7 @@ dependencies = [
  "hyper-util",
  "igd",
  "iroh-base",
- "iroh-metrics",
+ "iroh-metrics 0.13.0 (git+https://github.com/n0-computer/iroh.git?branch=feat/dns)",
  "libc",
  "netlink-packet-core",
  "netlink-packet-route",

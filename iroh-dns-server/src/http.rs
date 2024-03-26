@@ -1,13 +1,19 @@
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    time::Instant,
+};
 
 use anyhow::{bail, Context, Result};
 use axum::{
-    extract::ConnectInfo,
+    extract::{ConnectInfo, Request},
     handler::Handler,
-    http::{Method, Request},
+    http::Method,
+    middleware::{self, Next},
+    response::IntoResponse,
     routing::get,
     Router,
 };
+use iroh_metrics::{inc, inc_by};
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -24,8 +30,8 @@ mod pkarr;
 mod rate_limiting;
 mod tls;
 
-use crate::config::Config;
 use crate::state::AppState;
+use crate::{config::Config, metrics::Metrics};
 
 pub use self::tls::CertMode;
 
@@ -61,7 +67,7 @@ pub async fn serve(
         .allow_origin(cors::Any);
 
     // configure tracing middleware
-    let trace = TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {
+    let trace = TraceLayer::new_for_http().make_span_with(|request: &http::Request<_>| {
         let conn_info = request
             .extensions()
             .get::<ConnectInfo<SocketAddr>>()
@@ -93,7 +99,10 @@ pub async fn serve(
         .with_state(state);
 
     // configure app
-    let app = router.layer(cors).layer(trace);
+    let app = router
+        .layer(cors)
+        .layer(trace)
+        .route_layer(middleware::from_fn(metrics_middleware));
 
     let mut tasks = JoinSet::new();
 
@@ -146,4 +155,37 @@ pub async fn serve(
     }
 
     Ok(())
+}
+
+async fn metrics_middleware(req: Request, next: Next) -> impl IntoResponse {
+    let start = Instant::now();
+    // let path = if let Some(matched_path) = req.extensions().get::<MatchedPath>() {
+    //     matched_path.as_str().to_owned()
+    // } else {
+    //     req.uri().path().to_owned()
+    // };
+    // let method = req.method().clone();
+    //
+    let response = next.run(req).await;
+    //
+    let latency = start.elapsed().as_millis();
+    let status = response.status();
+    inc_by!(Metrics, http_requests_duration_ms, latency as u64);
+    inc!(Metrics, http_requests);
+    if status.is_success() {
+        inc!(Metrics, http_requests_success);
+    } else {
+        inc!(Metrics, http_requests_error);
+    }
+    //
+    // let labels = [
+    //     ("method", method.to_string()),
+    //     ("path", path),
+    //     ("status", status),
+    // ];
+    //
+    // metrics::counter!("http_requests_total", &labels).increment(1);
+    // metrics::histogram!("http_requests_duration_seconds", &labels).record(latency);
+
+    response
 }

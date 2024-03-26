@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     env,
-    net::Ipv4Addr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
 };
 
@@ -11,11 +11,20 @@ use crate::{
     http::{CertMode, HttpConfig, HttpsConfig},
 };
 
+const DEFAULT_METRICS_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9117);
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub http: Option<HttpConfig>,
     pub https: Option<HttpsConfig>,
     pub dns: DnsConfig,
+    pub metrics: Option<MetricsConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MetricsConfig {
+    disabled: bool,
+    bind_addr: Option<SocketAddr>,
 }
 
 impl Config {
@@ -41,6 +50,16 @@ impl Config {
     pub fn signed_packet_store_path() -> Result<PathBuf> {
         Ok(Self::data_dir()?.join("signed-packets-1.db"))
     }
+
+    pub fn metrics_addr(&self) -> Option<SocketAddr> {
+        match &self.metrics {
+            None => Some(DEFAULT_METRICS_ADDR),
+            Some(conf) => match conf.disabled {
+                true => None,
+                false => Some(conf.bind_addr.unwrap_or(DEFAULT_METRICS_ADDR)),
+            },
+        }
+    }
 }
 
 impl Default for Config {
@@ -65,6 +84,7 @@ impl Default for Config {
                 ipv4_addr: Some(Ipv4Addr::LOCALHOST),
                 ns_name: Some("ns1.irohdns.example.".to_string()),
             },
+            metrics: None,
         }
     }
 }
