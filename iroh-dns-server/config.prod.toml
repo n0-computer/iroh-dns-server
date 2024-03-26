@@ -1,14 +1,14 @@
 [https]
 port = 443
-domain = "localhost"
+domain = "irohdns.example.org"
 cert_mode = "lets_encrypt"
-letsencrypt_prod = false
+letsencrypt_prod = true
 
 [dns]
 port = 53
-default_soa = "dns1.irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
+default_soa = "dns1.irohdns.example.org hostmaster.irohdns.example.org 0 10800 3600 604800 3600"
 default_ttl = 30
-origin = "irohdns.example."
+origin = "irohdns.example.org"
 additional_origins = ["iroh."]
-ipv4_addr = "5.75.181.3"
-ns_name = "ns1.iroh.link"
+ipv4_addr = "203.0.10.10"
+ns_name = "ns1.irohdns.example.org"
