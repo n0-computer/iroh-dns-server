@@ -43,7 +43,7 @@ impl SignedPacketStore {
         let mut inserted = true;
         {
             let mut table = tx.open_table(SIGNED_PACKETS_TABLE)?;
-            if let Some(existing) = get_packet(&table, &key)? {
+            if let Some(existing) = get_packet(&table, key)? {
                 inserted = false;
                 if existing.more_recent_than(&packet) {
                     return Ok(false);
@@ -72,6 +72,7 @@ impl SignedPacketStore {
         let updated = {
             let mut table = tx.open_table(SIGNED_PACKETS_TABLE)?;
             let did_remove = table.remove(key.as_bytes())?.is_some();
+            #[allow(clippy::let_and_return)]
             did_remove
         };
         tx.commit()?;

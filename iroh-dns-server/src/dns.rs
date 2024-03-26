@@ -43,8 +43,8 @@ use crate::metrics::Metrics;
 use crate::store::SignedPacketStore;
 pub use node_authority::PacketSource;
 
-pub const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 14h
-pub const DEFAULT_SOA_TTL: u32 = 60 * 60 * 24 * 1; // 14d
+pub const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 12h
+pub const DEFAULT_SOA_TTL: u32 = 60 * 60 * 24 * 14; // 14d
 pub const DEFAULT_A_TTL: u32 = 60 * 60; // 1h
 
 /// DNS server settings

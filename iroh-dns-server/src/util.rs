@@ -38,7 +38,7 @@ pub fn signed_packet_to_hickory_records_without_origin(
         if name.num_labels() < 1 {
             continue;
         }
-        let zone = Label::from(name.iter().last().unwrap().into_label()?);
+        let zone = name.iter().last().unwrap().into_label()?;
         if zone != common_zone {
             continue;
         }

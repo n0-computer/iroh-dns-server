@@ -119,7 +119,7 @@ impl NodeAuthority {
             .read()
             .get(&public_key.to_bytes())
             .and_then(|zone| zone.records().get(&key))
-            .map(|set| Arc::clone(set))
+            .map(Arc::clone)
     }
 
     pub fn upsert_pkarr(&self, signed_packet: SignedPacket, _source: PacketSource) -> Result<bool> {
@@ -152,7 +152,7 @@ impl NodeAuthority {
                 updated = true;
             }
             btree_map::Entry::Occupied(mut e) => {
-                if e.get().older_than(&signed_packet) {
+                if e.get().older_than(signed_packet) {
                     e.insert(PkarrZone::from_signed_packet(signed_packet)?);
                     updated = true;
                 }
@@ -259,7 +259,7 @@ impl Authority for NodeAuthority {
 
 fn split_and_parse_pkarr(
     name: &Name,
-    allowed_origins: &Vec<Name>,
+    allowed_origins: &[Name],
 ) -> Result<(Name, pkarr::PublicKey, Name)> {
     trace!("resolve {name}");
     for origin in allowed_origins.iter() {
