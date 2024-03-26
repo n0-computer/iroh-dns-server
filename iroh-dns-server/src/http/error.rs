@@ -26,7 +26,10 @@ impl Default for AppError {
 
 impl AppError {
     pub fn with_status(status: StatusCode) -> AppError {
-        Self { status, detail: None }
+        Self {
+            status,
+            detail: None,
+        }
     }
 
     /// Create a new [`AppError`].

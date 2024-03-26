@@ -1,9 +1,15 @@
-use std::{collections::{btree_map, BTreeMap}, sync::Arc};
+use std::{
+    collections::{btree_map, BTreeMap},
+    sync::Arc,
+};
 
 use anyhow::Result;
 use hickory_proto::{
     op::Message,
-    rr::{domain::{IntoLabel, Label}, Name, Record, RecordSet, RecordType, RrKey},
+    rr::{
+        domain::{IntoLabel, Label},
+        Name, Record, RecordSet, RecordType, RrKey,
+    },
     serialize::binary::BinDecodable,
 };
 use pkarr::SignedPacket;
@@ -17,7 +23,7 @@ pub fn signed_packet_to_hickory_message(signed_packet: &SignedPacket) -> Result<
 pub fn signed_packet_to_hickory_records_without_origin(
     signed_packet: &SignedPacket,
     filter: impl Fn(&Record) -> bool,
-    ) -> Result<(Label, BTreeMap<RrKey, Arc<RecordSet>>)> {
+) -> Result<(Label, BTreeMap<RrKey, Arc<RecordSet>>)> {
     let common_zone = Label::from_utf8(&signed_packet.public_key().to_z32())?;
     let mut message = signed_packet_to_hickory_message(signed_packet)?;
     let answers = message.take_answers();
@@ -40,7 +46,8 @@ pub fn signed_packet_to_hickory_records_without_origin(
             continue;
         }
 
-        let name_without_zone = Name::from_labels(name.iter().take(name.num_labels() as usize - 1))?;
+        let name_without_zone =
+            Name::from_labels(name.iter().take(name.num_labels() as usize - 1))?;
         record.set_name(name_without_zone);
 
         let rrkey = RrKey::new(record.name().into(), record.record_type());
@@ -58,7 +65,6 @@ pub fn signed_packet_to_hickory_records_without_origin(
         }
     }
     Ok((common_zone, output))
-
 }
 
 pub fn signed_packet_to_hickory_records(
@@ -104,7 +110,11 @@ pub fn record_append_origin(record: &mut Record, origin: &Name) -> Result<()> {
     Ok(())
 }
 
-pub fn record_set_append_origin(input: &RecordSet, origin: &Name, serial: u32) -> Result<RecordSet> {
+pub fn record_set_append_origin(
+    input: &RecordSet,
+    origin: &Name,
+    serial: u32,
+) -> Result<RecordSet> {
     let new_name = input.name().clone().append_name(origin)?;
     let mut output = RecordSet::new(&new_name, input.record_type(), serial);
     // TODO: less clones

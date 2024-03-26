@@ -3,7 +3,9 @@ use std::str::FromStr;
 use anyhow::{bail, Result};
 use clap::{Parser, ValueEnum};
 use iroh_net::{
-    discovery::dns::N0_TESTDNS_NODE_ORIGIN, dns::node_info::{to_z32, IROH_NODE_TXT_LABEL}, key::SecretKey,
+    discovery::dns::N0_TESTDNS_NODE_ORIGIN,
+    dns::node_info::{to_z32, IROH_NODE_TXT_LABEL},
+    key::SecretKey,
     AddrInfo, NodeId,
 };
 use url::Url;

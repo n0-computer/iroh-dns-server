@@ -50,8 +50,7 @@ async fn main() -> anyhow::Result<()> {
         Env::LocalDev => {
             let nameserver: SocketAddr = LOCALHOST_DNS.parse()?;
             let mut config = ResolverConfig::new();
-            let nameserver_config =
-                NameServerConfig::new(nameserver, Protocol::Udp);
+            let nameserver_config = NameServerConfig::new(nameserver, Protocol::Udp);
             config.add_name_server(nameserver_config);
             let resolver = AsyncResolver::tokio(config, Default::default());
             (resolver, EXAMPLE_ORIGIN)
