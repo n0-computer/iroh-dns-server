@@ -42,18 +42,24 @@ async fn main() -> Result<()> {
     let mut tasks = JoinSet::new();
     tasks.spawn(with_span(
         error_span!("http"),
-        server::http::serve(config.http, config.https, state, cancel.clone()),
+        server::http::serve(
+            config.http.clone(),
+            config.https.clone(),
+            state,
+            cancel.clone(),
+        ),
     ));
     tasks.spawn(with_span(
         error_span!("dns"),
-        server::dns::serve(config.dns, dns_server, cancel.clone()),
+        server::dns::serve(config.dns.clone(), dns_server, cancel.clone()),
     ));
 
-    let metrics_addr: SocketAddr = "127.0.0.1:9090".parse().unwrap();
-    tasks.spawn(with_span(
-        error_span!("metrics"),
-        start_metrics_server(metrics_addr),
-    ));
+    if let Some(addr) = config.metrics_addr() {
+        tasks.spawn(with_span(
+            error_span!("metrics"),
+            start_metrics_server(addr),
+        ));
+    }
 
     let mut final_res = Ok(());
     while let Some(next) = tasks.join_next().await {
