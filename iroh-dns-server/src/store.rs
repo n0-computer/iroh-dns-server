@@ -2,8 +2,11 @@ use std::path::Path;
 
 use anyhow::Result;
 use bytes::Bytes;
+use iroh_metrics::inc;
 use pkarr::{PublicKey, SignedPacket};
 use redb::{backends::InMemoryBackend, Database, ReadableTable, TableDefinition};
+
+use crate::metrics::Metrics;
 
 type PublicKeyBytes = [u8; 32];
 
@@ -37,9 +40,11 @@ impl SignedPacketStore {
     pub fn upsert(&self, packet: SignedPacket) -> Result<bool> {
         let key = packet.public_key();
         let tx = self.db.begin_write()?;
+        let mut inserted = true;
         {
             let mut table = tx.open_table(SIGNED_PACKETS_TABLE)?;
             if let Some(existing) = get_packet(&table, &key)? {
+                inserted = false;
                 if existing.more_recent_than(&packet) {
                     return Ok(false);
                 }
@@ -48,6 +53,11 @@ impl SignedPacketStore {
             table.insert(&key.to_bytes(), &value[..])?;
         }
         tx.commit()?;
+        if inserted {
+            inc!(Metrics, store_packets_inserted);
+        } else {
+            inc!(Metrics, store_packets_updated);
+        }
         Ok(true)
     }
 
@@ -65,6 +75,9 @@ impl SignedPacketStore {
             did_remove
         };
         tx.commit()?;
+        if updated {
+            inc!(Metrics, store_packets_removed)
+        }
         Ok(updated)
     }
 

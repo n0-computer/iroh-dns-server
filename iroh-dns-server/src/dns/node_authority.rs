@@ -19,12 +19,13 @@ use hickory_server::{
     store::in_memory::InMemoryAuthority,
 };
 
+use iroh_metrics::inc;
 use parking_lot::RwLock;
 use pkarr::SignedPacket;
 use tracing::{debug, trace};
 
-use crate::store::SignedPacketStore;
 use crate::util::{record_set_append_origin, signed_packet_to_hickory_records_without_origin};
+use crate::{metrics::Metrics, store::SignedPacketStore};
 
 pub enum PacketSource {
     PkarrPublish,
@@ -122,9 +123,18 @@ impl NodeAuthority {
     }
 
     pub fn upsert_pkarr(&self, signed_packet: SignedPacket, _source: PacketSource) -> Result<bool> {
-        let updated = self.upsert_pkarr_zone(&signed_packet)?;
+        let updated = match self.upsert_pkarr_zone(&signed_packet) {
+            Ok(updated) => updated,
+            Err(err) => {
+                inc!(Metrics, pkarr_publish_error);
+                return Err(err);
+            }
+        };
         if updated {
             self.store.upsert(signed_packet)?;
+            inc!(Metrics, pkarr_publish_update);
+        } else {
+            inc!(Metrics, pkarr_publish_noop);
         }
         Ok(updated)
     }

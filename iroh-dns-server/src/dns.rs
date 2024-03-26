@@ -18,7 +18,8 @@ use hickory_server::{
     store::in_memory::InMemoryAuthority,
 };
 
-use proto::rr::LowerName;
+use iroh_metrics::inc;
+use proto::{op::ResponseCode, rr::LowerName};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -38,6 +39,7 @@ use self::node_authority::NodeAuthority;
 
 mod node_authority;
 use crate::config::Config;
+use crate::metrics::Metrics;
 use crate::store::SignedPacketStore;
 pub use node_authority::PacketSource;
 
@@ -216,7 +218,23 @@ impl RequestHandler for DnsServer {
         request: &Request,
         response_handle: R,
     ) -> ResponseInfo {
-        self.catalog.handle_request(request, response_handle).await
+        inc!(Metrics, dns_requests);
+        match request.protocol() {
+            hickory_server::server::Protocol::Udp => inc!(Metrics, dns_requests_udp),
+            hickory_server::server::Protocol::Https => inc!(Metrics, dns_requests_https),
+            _ => {}
+        }
+
+        let res = self.catalog.handle_request(request, response_handle).await;
+        match &res.response_code() {
+            ResponseCode::NoError => match res.answer_count() {
+                0 => inc!(Metrics, dns_lookup_notfound),
+                _ => inc!(Metrics, dns_lookup_success),
+            },
+            ResponseCode::NXDomain => inc!(Metrics, dns_lookup_notfound),
+            _ => inc!(Metrics, dns_lookup_error),
+        }
+        res
     }
 }
 

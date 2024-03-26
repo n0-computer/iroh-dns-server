@@ -46,6 +46,8 @@ redb = "2.0.0"
 tower-http = { version = "0.5.2", features = ["cors", "trace"] }
 tower_governor = "0.3.2"
 governor = "0.6.3"
+iroh-metrics = "0.13.0"
+struct_iterable = "0.1.1"
 
 [dev-dependencies]
 hickory-resolver = "0.24.0"

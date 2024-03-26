@@ -6,5 +6,6 @@ pub mod state;
 #[cfg(feature = "mainline-dht")]
 pub mod mainline;
 
+pub mod metrics;
 pub mod store;
 pub mod util;
