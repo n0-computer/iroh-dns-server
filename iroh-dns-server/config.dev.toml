@@ -8,7 +8,7 @@ cert_mode = "self_signed"
 letsencrypt_prod = false
 
 [dns]
-port = 5353
+port = 5300
 default_soa = "dns1.irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
 default_ttl = 900
 origin = "irohdns.example."

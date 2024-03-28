@@ -11,7 +11,7 @@ use iroh_net::dns::node_info::lookup_by_domain;
 use iroh_net::dns::node_info::lookup_by_id;
 use iroh_net::NodeId;
 
-const LOCALHOST_DNS: &str = "127.0.0.1:5353";
+const LOCALHOST_DNS: &str = "127.0.0.1:5300";
 const EXAMPLE_ORIGIN: &str = "irohdns.example";
 
 #[derive(ValueEnum, Clone, Debug, Default)]
@@ -19,7 +19,7 @@ pub enum Env {
     /// Use cloudflare and the irohdns test server at testdns.iroh.link
     #[default]
     IrohTest,
-    /// Use a localhost domain server listening on port 5353
+    /// Use a localhost domain server listening on port 5300
     LocalDev,
 }
 
