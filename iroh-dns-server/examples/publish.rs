@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     match args.env {
         Env::IrohTest => println!("dig {} TXT", node_domain(&node_id, N0_TESTDNS_NODE_ORIGIN)),
         Env::LocalDev => println!(
-            "dig @localhost -p 5353 {} TXT",
+            "dig @localhost -p 5300 {} TXT",
             node_domain(&node_id, EXAMPLE_ORIGIN)
         ),
     }
