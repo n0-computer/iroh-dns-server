@@ -19,6 +19,9 @@ pub struct SignedPacketStore {
 
 impl SignedPacketStore {
     pub fn open_file(path: impl AsRef<Path>) -> Result<Self> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let db = Database::builder().create(path)?;
         Self::open(db)
     }
