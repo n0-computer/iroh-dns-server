@@ -43,7 +43,7 @@ pub struct HttpConfig {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HttpsConfig {
     pub port: u16,
-    pub domain: String,
+    pub domains: Vec<String>,
     pub cert_mode: CertMode,
     pub letsencrypt_contact: Option<String>,
     pub letsencrypt_prod: bool,
@@ -130,7 +130,7 @@ pub async fn serve(
             config
                 .cert_mode
                 .build(
-                    &config.domain,
+                    config.domains,
                     cache_path,
                     config.letsencrypt_contact,
                     config.letsencrypt_prod,

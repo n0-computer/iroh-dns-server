@@ -3,7 +3,7 @@ port = 8080
 
 [https]
 port = 8443
-domain = "localhost"
+domains = ["localhost"]
 cert_mode = "self_signed"
 letsencrypt_prod = false
 
@@ -12,5 +12,5 @@ port = 5353
 default_soa = "dns1.irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
 default_ttl = 900
 origin = "irohdns.example."
-additional_origins = ["iroh."]
+additional_origins = ["."]
 ipv4_addr = "127.0.0.1"

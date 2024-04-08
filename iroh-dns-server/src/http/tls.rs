@@ -28,18 +28,18 @@ pub enum CertMode {
 impl CertMode {
     pub async fn build(
         &self,
-        domain: &str,
+        domains: Vec<String>,
         cert_cache: PathBuf,
         letsencrypt_contact: Option<String>,
         letsencrypt_prod: bool,
     ) -> Result<TlsAcceptor> {
         Ok(match self {
-            CertMode::Manual => TlsAcceptor::manual(domain, cert_cache).await?,
-            CertMode::SelfSigned => TlsAcceptor::self_signed(domain).await?,
+            CertMode::Manual => TlsAcceptor::manual(domains, cert_cache).await?,
+            CertMode::SelfSigned => TlsAcceptor::self_signed(domains).await?,
             CertMode::LetsEncrypt => {
                 let contact =
                     letsencrypt_contact.context("contact is required for letsencrypt cert mode")?;
-                TlsAcceptor::letsencrypt(domain, &contact, letsencrypt_prod, cert_cache)?
+                TlsAcceptor::letsencrypt(domains, &contact, letsencrypt_prod, cert_cache)?
             }
         })
     }
@@ -68,8 +68,8 @@ impl<I: AsyncRead + AsyncWrite + Unpin + Send + 'static, S: Send + 'static> Acce
 }
 
 impl TlsAcceptor {
-    async fn self_signed(hostname: &str) -> Result<Self> {
-        let tls_cert = rcgen::generate_simple_self_signed(vec![hostname.to_string()])?;
+    async fn self_signed(domains: Vec<String>) -> Result<Self> {
+        let tls_cert = rcgen::generate_simple_self_signed(domains)?;
         let config = RustlsConfig::from_der(
             vec![tls_cert.serialize_der()?],
             tls_cert.serialize_private_key_der(),
@@ -78,11 +78,15 @@ impl TlsAcceptor {
         let acceptor = RustlsAcceptor::new(config);
         Ok(Self::Manual(acceptor))
     }
-    async fn manual(hostname: &str, dir: PathBuf) -> Result<Self> {
+
+    async fn manual(domains: Vec<String>, dir: PathBuf) -> Result<Self> {
         let config = rustls::ServerConfig::builder()
             .with_safe_defaults()
             .with_no_client_auth();
-        let keyname = escape_hostname(hostname);
+        if domains.len() != 1 {
+            bail!("Multiple domains in manual mode are not supported");
+        }
+        let keyname = escape_hostname(&domains[0]);
         let cert_path = dir.join(format!("{keyname}.crt"));
         let key_path = dir.join(format!("{keyname}.key"));
 
@@ -101,7 +105,7 @@ impl TlsAcceptor {
     }
 
     fn letsencrypt(
-        hostname: &str,
+        domains: Vec<String>,
         contact: &str,
         is_production: bool,
         dir: PathBuf,
@@ -109,7 +113,7 @@ impl TlsAcceptor {
         let config = rustls::ServerConfig::builder()
             .with_safe_defaults()
             .with_no_client_auth();
-        let mut state = AcmeConfig::new(vec![hostname])
+        let mut state = AcmeConfig::new(domains)
             .contact([format!("mailto:{contact}")])
             .cache_option(Some(DirCache::new(dir)))
             .directory_lets_encrypt(is_production)

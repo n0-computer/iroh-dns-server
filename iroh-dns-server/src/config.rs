@@ -68,19 +68,19 @@ impl Default for Config {
             http: Some(HttpConfig { port: 8080 }),
             https: Some(HttpsConfig {
                 port: 8443,
-                domain: "localhost".to_string(),
+                domains: vec!["localhost".to_string()],
                 cert_mode: CertMode::SelfSigned,
                 letsencrypt_contact: None,
                 letsencrypt_prod: false,
             }),
             dns: DnsConfig {
                 default_soa:
-                    "dns1.irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
+                    "irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
                         .to_string(),
                 origin: "irohdns.example.".to_string(),
                 port: 5353,
                 default_ttl: 900,
-                additional_origins: vec!["iroh.".to_string(), ".".to_string()],
+                additional_origins: vec![".".to_string()],
                 ipv4_addr: Some(Ipv4Addr::LOCALHOST),
                 ns_name: Some("ns1.irohdns.example.".to_string()),
             },

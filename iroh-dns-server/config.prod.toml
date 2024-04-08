@@ -1,6 +1,6 @@
 [https]
 port = 443
-domain = "irohdns.example.org"
+domains = ["irohdns.example.org"]
 cert_mode = "lets_encrypt"
 letsencrypt_prod = true
 
@@ -9,6 +9,6 @@ port = 53
 default_soa = "dns1.irohdns.example.org hostmaster.irohdns.example.org 0 10800 3600 604800 3600"
 default_ttl = 30
 origin = "irohdns.example.org"
-additional_origins = ["iroh."]
+additional_origins = ["."]
 ipv4_addr = "203.0.10.10"
 ns_name = "ns1.irohdns.example.org"
