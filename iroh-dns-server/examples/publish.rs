@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use clap::{Parser, ValueEnum};
 use iroh_net::{
     discovery::dns::N0_TESTDNS_NODE_ORIGIN,
-    dns::node_info::{to_z32, IROH_NODE_TXT_LABEL},
+    dns::node_info::{to_z32, IROH_TXT_NAME},
     key::SecretKey,
     AddrInfo, NodeId,
 };
@@ -15,13 +15,14 @@ use iroh_net::discovery::pkarr_publish::Publisher;
 const LOCALHOST_PKARR: &str = "http://localhost:8080/pkarr";
 const EXAMPLE_ORIGIN: &str = "irohdns.example";
 
-#[derive(ValueEnum, Clone, Debug, Default, Copy)]
+#[derive(ValueEnum, Clone, Debug, Default, Copy, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub enum Env {
     /// Use the irohdns test server at testdns.iroh.link
     #[default]
-    IrohTest,
+    Default,
     /// Use a relay listening at localhost:8080
-    LocalDev,
+    Dev,
 }
 
 /// Publish a record to an irohdns server.
@@ -30,7 +31,7 @@ pub enum Env {
 #[derive(Parser, Debug)]
 struct Cli {
     /// Environment to publish to.
-    #[clap(value_enum, short, long, default_value_t = Env::IrohTest)]
+    #[clap(value_enum, short, long, default_value_t = Env::Default)]
     env: Env,
     /// Pkarr Relay URL. If set, the --env option will be ignored.
     #[clap(long, conflicts_with = "env")]
@@ -59,12 +60,13 @@ async fn main() -> Result<()> {
         }
     };
     let node_id = secret_key.public();
-    println!("node: {node_id}");
-    println!("relay: {}", args.relay_url);
+    println!("publishing node information:");
+    println!("    node_id: {node_id}");
+    println!("    relay:   {}", args.relay_url);
     let publisher = match (args.pkarr_relay, args.env) {
         (Some(pkarr_relay), _) => Publisher::new(secret_key, pkarr_relay),
-        (None, Env::IrohTest) => Publisher::n0_testdns(secret_key),
-        (None, Env::LocalDev) => Publisher::new(secret_key, LOCALHOST_PKARR.parse().unwrap()),
+        (None, Env::Default) => Publisher::n0_testdns(secret_key),
+        (None, Env::Dev) => Publisher::new(secret_key, LOCALHOST_PKARR.parse().unwrap()),
     };
 
     let info = AddrInfo {
@@ -73,17 +75,24 @@ async fn main() -> Result<()> {
     };
     // let an = NodeAnnounce::new(node_id, Some(args.home_relay), vec![]);
     publisher.publish_addr_info(&info).await?;
-    println!("published signed record! Resolve with ",);
+    println!("singed packet published.");
+    println!("resolve with:");
     match args.env {
-        Env::IrohTest => println!("dig {} TXT", node_domain(&node_id, N0_TESTDNS_NODE_ORIGIN)),
-        Env::LocalDev => println!(
-            "dig @localhost -p 5353 {} TXT",
-            node_domain(&node_id, EXAMPLE_ORIGIN)
-        ),
+        Env::Default => {
+            println!("cargo run --example resolve -- node {}", node_id);
+            println!("dig {} TXT", fmt_domain(&node_id, N0_TESTDNS_NODE_ORIGIN))
+        }
+        Env::Dev => {
+            println!("cargo run --example resolve -- --env dev node {}", node_id);
+            println!(
+                "dig @localhost -p 5353 {} TXT",
+                fmt_domain(&node_id, EXAMPLE_ORIGIN)
+            )
+        }
     }
     Ok(())
 }
 
-fn node_domain(node_id: &NodeId, origin: &str) -> String {
-    format!("{}.{}.{}", IROH_NODE_TXT_LABEL, to_z32(node_id), origin)
+fn fmt_domain(node_id: &NodeId, origin: &str) -> String {
+    format!("{}.{}.{}", IROH_TXT_NAME, to_z32(node_id), origin)
 }

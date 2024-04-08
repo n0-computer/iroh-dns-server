@@ -349,12 +349,12 @@ dependencies = [
 
 [[package]]
 name = "bao-tree"
-version = "0.12.1"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95ae2f5c25ce9df1d21b6d2cfe8e1517ff78bd65476bfc47a1ac5b657fa0e1df"
+checksum = "bdae307defb220bd2698a42495e226ff89e3173f024abfc2182129603e74b5c7"
 dependencies = [
  "bytes",
- "futures-lite",
+ "futures",
  "genawaiter",
  "iroh-blake3",
  "iroh-io",
@@ -1098,12 +1098,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
 
 [[package]]
-name = "fastrand"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "658bd65b1cf4c852a3cc96f18a8ce7b5640f6b703f905c7d74532294c2a63984"
-
-[[package]]
 name = "ff"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1203,19 +1197,6 @@ name = "futures-io"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a44623e20b9681a318efdd71c299b6b222ed6f231972bfe2f224ebad6311f0c1"
-
-[[package]]
-name = "futures-lite"
-version = "2.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52527eb5074e35e9339c6b4e8d12600c7128b68fb25dcb9fa9dec18f7c25f3a5"
-dependencies = [
- "fastrand",
- "futures-core",
- "futures-io",
- "parking",
- "pin-project-lite",
-]
 
 [[package]]
 name = "futures-macro"
@@ -1811,6 +1792,7 @@ checksum = "8f518f335dce6725a761382244631d86cf0ccb2863413590b31338feb467f9c3"
 [[package]]
 name = "iroh-base"
 version = "0.13.0"
+source = "git+https://github.com/n0-computer/iroh.git?branch=feat/dns#e43d0085f556dca755cedb00d079658b4218d736"
 dependencies = [
  "aead",
  "anyhow",
@@ -1909,25 +1891,6 @@ dependencies = [
 [[package]]
 name = "iroh-metrics"
 version = "0.13.0"
-dependencies = [
- "anyhow",
- "erased_set",
- "http-body-util",
- "hyper 1.2.0",
- "hyper-util",
- "once_cell",
- "prometheus-client",
- "reqwest",
- "serde",
- "struct_iterable",
- "time",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "iroh-metrics"
-version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4b29ecbd3a1581e5b73c59cdff20225690f5eed32f293728563a0d06c2c91fe"
 dependencies = [
@@ -1947,8 +1910,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "iroh-metrics"
+version = "0.13.0"
+source = "git+https://github.com/n0-computer/iroh.git?branch=feat/dns#e43d0085f556dca755cedb00d079658b4218d736"
+dependencies = [
+ "anyhow",
+ "erased_set",
+ "http-body-util",
+ "hyper 1.2.0",
+ "hyper-util",
+ "once_cell",
+ "prometheus-client",
+ "reqwest",
+ "serde",
+ "struct_iterable",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "iroh-net"
 version = "0.13.0"
+source = "git+https://github.com/n0-computer/iroh.git?branch=feat/dns#e43d0085f556dca755cedb00d079658b4218d736"
 dependencies = [
  "aead",
  "anyhow",
@@ -1964,6 +1948,7 @@ dependencies = [
  "futures",
  "governor",
  "hex",
+ "hickory-proto",
  "hickory-resolver",
  "hostname",
  "http 1.1.0",
@@ -1972,7 +1957,7 @@ dependencies = [
  "hyper-util",
  "igd-next",
  "iroh-base",
- "iroh-metrics 0.13.0",
+ "iroh-metrics 0.13.0 (git+https://github.com/n0-computer/iroh.git?branch=feat/dns)",
  "libc",
  "netlink-packet-core",
  "netlink-packet-route",
@@ -1980,6 +1965,7 @@ dependencies = [
  "num_enum",
  "once_cell",
  "parking_lot",
+ "pkarr",
  "postcard",
  "quinn",
  "quinn-proto",
@@ -2013,6 +1999,7 @@ dependencies = [
  "windows 0.51.1",
  "wmi",
  "x509-parser 0.15.1",
+ "z32",
 ]
 
 [[package]]

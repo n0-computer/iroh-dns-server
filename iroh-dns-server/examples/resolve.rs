@@ -18,14 +18,14 @@ const EXAMPLE_ORIGIN: &str = "irohdns.example";
 pub enum Env {
     /// Use cloudflare and the irohdns test server at testdns.iroh.link
     #[default]
-    IrohTest,
+    Default,
     /// Use a localhost domain server listening on port 5353
-    LocalDev,
+    Dev,
 }
 
 #[derive(Debug, Parser)]
 struct Cli {
-    #[clap(value_enum, short, long, default_value_t = Env::IrohTest)]
+    #[clap(value_enum, short, long, default_value_t = Env::Default)]
     env: Env,
     #[clap(subcommand)]
     command: Command,
@@ -43,11 +43,11 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
     let (resolver, origin) = match args.env {
-        Env::IrohTest => (
+        Env::Default => (
             iroh_net::dns::default_resolver().clone(),
             N0_TESTDNS_NODE_ORIGIN,
         ),
-        Env::LocalDev => {
+        Env::Dev => {
             let nameserver: SocketAddr = LOCALHOST_DNS.parse()?;
             let mut config = ResolverConfig::new();
             let nameserver_config = NameServerConfig::new(nameserver, Protocol::Udp);
@@ -56,24 +56,16 @@ async fn main() -> anyhow::Result<()> {
             (resolver, EXAMPLE_ORIGIN)
         }
     };
-    match args.command {
-        Command::Node { node_id } => {
-            let addr = lookup_by_id(&resolver, &node_id, origin).await?;
-            let relay_url = addr.relay_url().map(|u| u.to_string()).unwrap_or_default();
-            println!("node_id:  {node_id}");
-            println!("relay_url: {relay_url}");
-        }
-        Command::Domain { domain } => {
-            let addr = lookup_by_domain(&resolver, &domain).await?;
-            let node_id = addr.node_id;
-            let relay_url = addr
-                .info
-                .relay_url
-                .map(|u| u.to_string())
-                .unwrap_or_default();
-            println!("node_id:  {node_id}");
-            println!("relay_url: {relay_url}");
-        }
-    }
+    let node_addr = match args.command {
+        Command::Node { node_id } => lookup_by_id(&resolver, &node_id, origin).await?,
+        Command::Domain { domain } => lookup_by_domain(&resolver, &domain).await?,
+    };
+    let node_id = node_addr.node_id;
+    let relay_url = node_addr
+        .relay_url()
+        .map(|u| u.to_string())
+        .unwrap_or_default();
+    println!("node_id:  {node_id}");
+    println!("relay:    {relay_url}");
     Ok(())
 }
