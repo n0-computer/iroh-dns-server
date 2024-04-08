@@ -78,7 +78,7 @@ impl Default for Config {
                     "irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
                         .to_string(),
                 origin: "irohdns.example.".to_string(),
-                port: 5353,
+                port: 5300,
                 default_ttl: 900,
                 additional_origins: vec![".".to_string()],
                 ipv4_addr: Some(Ipv4Addr::LOCALHOST),

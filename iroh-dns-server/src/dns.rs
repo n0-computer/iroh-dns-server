@@ -82,6 +82,7 @@ pub async fn serve(
         TcpListener::bind(sock_addr).await?,
         TCP_TIMEOUT, // Duration::from_millis(settings.timeout_ms),
     );
+    tracing::info!("DNS server listening on {}", sock_addr);
 
     tokio::select! {
         _ = server.block_until_done() => {

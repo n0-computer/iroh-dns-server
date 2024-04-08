@@ -85,7 +85,7 @@ async fn main() -> Result<()> {
         Env::Dev => {
             println!("cargo run --example resolve -- --env dev node {}", node_id);
             println!(
-                "dig @localhost -p 5353 {} TXT",
+                "dig @localhost -p 5300 {} TXT",
                 fmt_domain(&node_id, EXAMPLE_ORIGIN)
             )
         }
