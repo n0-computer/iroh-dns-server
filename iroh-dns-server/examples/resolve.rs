@@ -1,15 +1,18 @@
 use std::net::SocketAddr;
 
-use clap::Parser;
-use clap::ValueEnum;
-use hickory_resolver::config::NameServerConfig;
-use hickory_resolver::config::Protocol;
-use hickory_resolver::config::ResolverConfig;
-use hickory_resolver::AsyncResolver;
-use iroh_net::discovery::dns::N0_TESTDNS_NODE_ORIGIN;
-use iroh_net::dns::node_info::lookup_by_domain;
-use iroh_net::dns::node_info::lookup_by_id;
-use iroh_net::NodeId;
+use clap::{Parser, ValueEnum};
+use hickory_resolver::{
+    config::{NameServerConfig, Protocol, ResolverConfig},
+    AsyncResolver,
+};
+use iroh_net::{
+    discovery::dns::N0_DNS_NODE_ORIGIN,
+    dns::{
+        node_info::{lookup_by_domain, lookup_by_id},
+        DnsResolver,
+    },
+    NodeId,
+};
 
 const LOCALHOST_DNS: &str = "127.0.0.1:5300";
 const EXAMPLE_ORIGIN: &str = "irohdns.example";
@@ -45,27 +48,27 @@ async fn main() -> anyhow::Result<()> {
     let (resolver, origin) = match args.env {
         Env::Default => (
             iroh_net::dns::default_resolver().clone(),
-            "dns.iroh.link", // N0_TESTDNS_NODE_ORIGIN,
+            N0_DNS_NODE_ORIGIN,
         ),
-        Env::Dev => {
-            let nameserver: SocketAddr = LOCALHOST_DNS.parse()?;
-            let mut config = ResolverConfig::new();
-            let nameserver_config = NameServerConfig::new(nameserver, Protocol::Udp);
-            config.add_name_server(nameserver_config);
-            let resolver = AsyncResolver::tokio(config, Default::default());
-            (resolver, EXAMPLE_ORIGIN)
-        }
+        Env::Dev => (
+            resolver_with_nameserver(LOCALHOST_DNS.parse()?),
+            EXAMPLE_ORIGIN,
+        ),
     };
-    let node_addr = match args.command {
+    let resolved = match args.command {
         Command::Node { node_id } => lookup_by_id(&resolver, &node_id, origin).await?,
         Command::Domain { domain } => lookup_by_domain(&resolver, &domain).await?,
     };
-    let node_id = node_addr.node_id;
-    let relay_url = node_addr
-        .relay_url()
-        .map(|u| u.to_string())
-        .unwrap_or_default();
-    println!("node_id:  {node_id}");
-    println!("relay:    {relay_url}");
+    println!("resolved node {}", resolved.node_id);
+    if let Some(relay_url) = resolved.relay_url() {
+        println!("    relay={relay_url}");
+    }
     Ok(())
+}
+
+fn resolver_with_nameserver(nameserver: SocketAddr) -> DnsResolver {
+    let mut config = ResolverConfig::new();
+    let nameserver_config = NameServerConfig::new(nameserver, Protocol::Udp);
+    config.add_name_server(nameserver_config);
+    AsyncResolver::tokio(config, Default::default())
 }

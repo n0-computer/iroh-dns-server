@@ -3,14 +3,15 @@ use std::str::FromStr;
 use anyhow::{bail, Result};
 use clap::{Parser, ValueEnum};
 use iroh_net::{
-    discovery::dns::N0_TESTDNS_NODE_ORIGIN,
-    dns::node_info::{to_z32, IROH_TXT_NAME},
+    discovery::{
+        dns::N0_DNS_NODE_ORIGIN,
+        pkarr_publish::{PkarrRelayClient, N0_DNS_PKARR_RELAY},
+    },
+    dns::node_info::{to_z32, NodeInfo, IROH_TXT_NAME},
     key::SecretKey,
-    AddrInfo, NodeId,
+    NodeId,
 };
 use url::Url;
-
-use iroh_net::discovery::pkarr_publish::Publisher;
 
 const LOCALHOST_PKARR: &str = "http://localhost:8080/pkarr";
 const EXAMPLE_ORIGIN: &str = "irohdns.example";
@@ -47,6 +48,7 @@ struct Cli {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let args = Cli::parse();
+
     let secret_key = match std::env::var("IROH_SECRET") {
         Ok(s) => SecretKey::from_str(&s)?,
         Err(_) if args.create => {
@@ -59,37 +61,36 @@ async fn main() -> Result<()> {
             bail!("Environtment variable IROH_SECRET is not set. To create a new secret, use the --create option.")
         }
     };
-    let node_id = secret_key.public();
-    println!("publishing node information:");
-    println!("    node_id: {node_id}");
-    println!("    relay:   {}", args.relay_url);
-    let publisher = match (args.pkarr_relay, args.env) {
-        (Some(pkarr_relay), _) => {
-            println!("create for {pkarr_relay}");
-            Publisher::new(secret_key, pkarr_relay)
-        }
-        (None, Env::Default) => Publisher::n0_testdns(secret_key),
-        (None, Env::Dev) => Publisher::new(secret_key, LOCALHOST_PKARR.parse().unwrap()),
-    };
-    println!("pub {publisher:?}");
 
-    let info = AddrInfo {
-        relay_url: Some(args.relay_url.into()),
-        direct_addresses: Default::default(),
+    let node_id = secret_key.public();
+    let pkarr_relay = match (args.pkarr_relay, args.env) {
+        (Some(pkarr_relay), _) => pkarr_relay,
+        (None, Env::Default) => N0_DNS_PKARR_RELAY.parse().expect("valid url"),
+        (None, Env::Dev) => LOCALHOST_PKARR.parse().expect("valid url"),
     };
-    // let an = NodeAnnounce::new(node_id, Some(args.home_relay), vec![]);
-    publisher.publish_addr_info(&info).await?;
-    println!("singed packet published.");
+
+    println!("announce {node_id}:");
+    println!("    relay={}", args.relay_url);
+    println!("");
+    println!("publish to {pkarr_relay} ...");
+
+    let pkarr = PkarrRelayClient::new(pkarr_relay);
+    let node_info = NodeInfo::new(node_id, Some(args.relay_url.into()));
+    let signed_packet = node_info.to_pkarr_signed_packet(&secret_key, 30)?;
+    pkarr.publish(&signed_packet).await?;
+
+    println!("signed packet published.");
     println!("resolve with:");
+
     match args.env {
         Env::Default => {
-            println!("cargo run --example resolve -- node {}", node_id);
-            println!("dig {} TXT", fmt_domain(&node_id, N0_TESTDNS_NODE_ORIGIN))
+            println!("   cargo run --example resolve -- node {}", node_id);
+            println!("   dig {} TXT", fmt_domain(&node_id, N0_DNS_NODE_ORIGIN))
         }
         Env::Dev => {
-            println!("cargo run --example resolve -- --env dev node {}", node_id);
+            println!("    cargo run --example resolve -- --env dev node {}", node_id);
             println!(
-                "dig @localhost -p 5300 {} TXT",
+                "    dig @localhost -p 5300 {} TXT",
                 fmt_domain(&node_id, EXAMPLE_ORIGIN)
             )
         }
