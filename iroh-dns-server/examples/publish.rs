@@ -64,10 +64,14 @@ async fn main() -> Result<()> {
     println!("    node_id: {node_id}");
     println!("    relay:   {}", args.relay_url);
     let publisher = match (args.pkarr_relay, args.env) {
-        (Some(pkarr_relay), _) => Publisher::new(secret_key, pkarr_relay),
+        (Some(pkarr_relay), _) => {
+            println!("create for {pkarr_relay}");
+            Publisher::new(secret_key, pkarr_relay)
+        }
         (None, Env::Default) => Publisher::n0_testdns(secret_key),
         (None, Env::Dev) => Publisher::new(secret_key, LOCALHOST_PKARR.parse().unwrap()),
     };
+    println!("pub {publisher:?}");
 
     let info = AddrInfo {
         relay_url: Some(args.relay_url.into()),

@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
     let (resolver, origin) = match args.env {
         Env::Default => (
             iroh_net::dns::default_resolver().clone(),
-            N0_TESTDNS_NODE_ORIGIN,
+            "dns.iroh.link", // N0_TESTDNS_NODE_ORIGIN,
         ),
         Env::Dev => {
             let nameserver: SocketAddr = LOCALHOST_DNS.parse()?;

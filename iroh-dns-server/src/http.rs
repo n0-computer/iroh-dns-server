@@ -25,7 +25,6 @@ use tracing::{info, span, Level};
 
 mod doh;
 mod error;
-mod extract;
 mod pkarr;
 mod rate_limiting;
 mod tls;
@@ -157,17 +156,18 @@ pub async fn serve(
     Ok(())
 }
 
+/// Record request metrics.
+///
+// TODO:
+// * Request duration would be much better tracked as a histogram.
+// * It would be great to attach labels to the metrics, so that the recorded metrics
+// can filter by method etc.
+//
+// See also
+// https://github.com/tokio-rs/axum/blob/main/examples/prometheus-metrics/src/main.rs#L114
 async fn metrics_middleware(req: Request, next: Next) -> impl IntoResponse {
     let start = Instant::now();
-    // let path = if let Some(matched_path) = req.extensions().get::<MatchedPath>() {
-    //     matched_path.as_str().to_owned()
-    // } else {
-    //     req.uri().path().to_owned()
-    // };
-    // let method = req.method().clone();
-    //
     let response = next.run(req).await;
-    //
     let latency = start.elapsed().as_millis();
     let status = response.status();
     inc_by!(Metrics, http_requests_duration_ms, latency as u64);
@@ -177,15 +177,5 @@ async fn metrics_middleware(req: Request, next: Next) -> impl IntoResponse {
     } else {
         inc!(Metrics, http_requests_error);
     }
-    //
-    // let labels = [
-    //     ("method", method.to_string()),
-    //     ("path", path),
-    //     ("status", status),
-    // ];
-    //
-    // metrics::counter!("http_requests_total", &labels).increment(1);
-    // metrics::histogram!("http_requests_duration_seconds", &labels).record(latency);
-
     response
 }

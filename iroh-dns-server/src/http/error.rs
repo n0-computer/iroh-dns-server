@@ -40,10 +40,6 @@ impl AppError {
             detail: message.map(|m| m.to_string()),
         }
     }
-
-    // pub fn any(message: impl ToString) -> Self {
-    //     Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(message))
-    // }
 }
 
 impl IntoResponse for AppError {

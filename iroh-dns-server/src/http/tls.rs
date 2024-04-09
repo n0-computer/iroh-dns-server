@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     io,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use anyhow::{bail, Context, Result};
@@ -98,9 +98,8 @@ impl TlsAcceptor {
         .await??;
 
         let config = config.with_single_cert(certs, secret_key)?;
-        let config = Arc::new(config);
-        // let acceptor = tokio_rustls::TlsAcceptor::from(config);
-        let acceptor = RustlsAcceptor::new(RustlsConfig::from_config(config));
+        let config = RustlsConfig::from_config(Arc::new(config));
+        let acceptor = RustlsAcceptor::new(config);
         Ok(Self::Manual(acceptor))
     }
 
@@ -171,7 +170,10 @@ fn load_secret_key(filename: impl AsRef<Path>) -> Result<rustls::PrivateKey> {
     );
 }
 
+static UNSAFE_HOSTNAME_CHARACTERS: OnceLock<regex::Regex> = OnceLock::new();
+
 fn escape_hostname(hostname: &str) -> Cow<'_, str> {
-    let unsafe_hostname_characters = regex::Regex::new(r"[^a-zA-Z0-9-\.]").unwrap();
-    unsafe_hostname_characters.replace_all(hostname, "")
+    let regex = UNSAFE_HOSTNAME_CHARACTERS
+        .get_or_init(|| regex::Regex::new(r"[^a-zA-Z0-9-\.]").expect("valid regex"));
+    regex.replace_all(hostname, "")
 }

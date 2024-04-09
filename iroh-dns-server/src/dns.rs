@@ -78,10 +78,7 @@ pub async fn serve(
     let sock_addr = SocketAddrV4::new(ip4_addr, config.port);
 
     server.register_socket(UdpSocket::bind(sock_addr).await?);
-    server.register_listener(
-        TcpListener::bind(sock_addr).await?,
-        TCP_TIMEOUT, // Duration::from_millis(settings.timeout_ms),
-    );
+    server.register_listener(TcpListener::bind(sock_addr).await?, TCP_TIMEOUT);
     tracing::info!("DNS server listening on {}", sock_addr);
 
     tokio::select! {
@@ -94,19 +91,14 @@ pub async fn serve(
     Ok(())
 }
 /// State for serving DNS
-#[derive(Clone)]
+#[derive(Clone, derive_more::Debug)]
 pub struct DnsServer {
     pub authority: Arc<NodeAuthority>,
     /// The default SOA record used for all zones that this DNS server controls
     pub default_soa: rdata::SOA,
     pub default_ttl: u32,
+    #[debug("Catalog")]
     pub catalog: Arc<Catalog>,
-}
-
-impl std::fmt::Debug for DnsServer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DnsServer").finish()
-    }
 }
 
 impl DnsServer {

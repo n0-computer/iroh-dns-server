@@ -3,7 +3,7 @@
 //! Copied from
 //! https://github.com/fission-codes/fission-server/blob/394de877fad021260c69fdb1edd7bb4b2f98108c/fission-core/src/dns.rs
 
-use anyhow::{bail, ensure, Result};
+use anyhow::{anyhow, ensure, Result};
 use hickory_proto as proto;
 use serde::{Deserialize, Serialize};
 
@@ -130,9 +130,9 @@ pub struct DohRecordJson {
 impl DohRecordJson {
     /// Create a new JSON record from a DNS record
     pub fn from_record(record: &proto::rr::Record) -> Result<Self> {
-        let Some(data) = record.data() else {
-            bail!("Missing record data");
-        };
+        let data = record
+            .data()
+            .ok_or_else(|| anyhow!("Missing record data"))?;
 
         Ok(Self {
             name: record.name().to_string(),

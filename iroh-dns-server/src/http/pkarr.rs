@@ -15,7 +15,7 @@ use super::error::AppError;
 pub async fn put(
     State(state): State<AppState>,
     Path(key): Path<String>,
-    body: Bytes, // Json(req): Json<PublishRequest>,
+    body: Bytes,
 ) -> Result<impl IntoResponse, AppError> {
     let key = pkarr::PublicKey::try_from(key.as_str())
         .map_err(|e| AppError::new(StatusCode::BAD_REQUEST, Some(format!("invalid key: {e}"))))?;

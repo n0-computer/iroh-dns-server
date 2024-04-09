@@ -28,8 +28,9 @@ pub struct MetricsConfig {
 }
 
 impl Config {
-    pub fn load(path: impl AsRef<Path>) -> Result<Config> {
-        let s = std::fs::read_to_string(path.as_ref())
+    pub async fn load(path: impl AsRef<Path>) -> Result<Config> {
+        let s = tokio::fs::read_to_string(path.as_ref())
+            .await
             .with_context(|| format!("failed to read {}", path.as_ref().to_string_lossy()))?;
         let config: Config = toml::from_str(&s)?;
         Ok(config)
@@ -74,9 +75,8 @@ impl Default for Config {
                 letsencrypt_prod: false,
             }),
             dns: DnsConfig {
-                default_soa:
-                    "irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
-                        .to_string(),
+                default_soa: "irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
+                    .to_string(),
                 origin: "irohdns.example.".to_string(),
                 port: 5300,
                 default_ttl: 900,

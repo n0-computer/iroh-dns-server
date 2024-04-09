@@ -88,22 +88,6 @@ pub struct DnsQuery {
     pub recursion_desired: Option<bool>,
 }
 
-impl DnsQuery {
-    // /// Construct a new query for a record with a given type
-    // pub fn new(name: String, record_type: RecordType) -> Self {
-    //     Self {
-    //         name,
-    //         record_type: Some(record_type.to_string()),
-    //         cd: None,
-    //         ct: None,
-    //         dnssec_ok: None,
-    //         edns_client_subnet: None,
-    //         random_padding: None,
-    //         recursion_desired: None,
-    //     }
-    // }
-}
-
 /// A DNS request encoded in the query string
 #[derive(Debug)]
 pub struct DnsRequestQuery(pub(crate) DNSRequest, pub(crate) DnsMimeType);

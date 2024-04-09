@@ -13,6 +13,7 @@ type PublicKeyBytes = [u8; 32];
 const SIGNED_PACKETS_TABLE: TableDefinition<&PublicKeyBytes, &[u8]> =
     TableDefinition::new("signed-packets-1");
 
+#[derive(Debug)]
 pub struct SignedPacketStore {
     db: Database,
 }

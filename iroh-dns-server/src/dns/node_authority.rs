@@ -34,20 +34,24 @@ pub enum PacketSource {
 
 pub type PublicKeyBytes = [u8; 32];
 
+#[derive(derive_more::Debug)]
 pub struct NodeAuthority {
     serial: u32,
     primary_origin: LowerName,
     all_origins: Vec<Name>,
 
     store: SignedPacketStore,
+    #[debug("InMemoryAuthority")]
     static_authority: InMemoryAuthority,
     zones: RwLock<BTreeMap<PublicKeyBytes, PkarrZone>>,
 }
 
+#[derive(Debug)]
 struct PkarrZone {
     timestamp: u64,
     records: BTreeMap<RrKey, Arc<RecordSet>>,
 }
+
 impl PkarrZone {
     fn from_signed_packet(signed_packet: &SignedPacket) -> Result<Self> {
         let (_label, records) =
