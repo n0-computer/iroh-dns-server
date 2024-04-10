@@ -4,12 +4,9 @@ use anyhow::Result;
 use axum::{routing::get, Router};
 use clap::Parser;
 use futures::{Future, FutureExt};
-use iroh_dns_server::{self as server, config::Config, dns::DnsHandler, state::AppState};
-use iroh_metrics::metrics::start_metrics_server;
-use server::metrics::init_metrics;
-use server::run::run_with_config_until_ctrl_c;
-use server::state::ZoneStore;
-use server::store::SignedPacketStore;
+use iroh_dns_server::{
+    config::Config, metrics::init_metrics, server::run_with_config_until_ctrl_c,
+};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use tokio::task::JoinSet;

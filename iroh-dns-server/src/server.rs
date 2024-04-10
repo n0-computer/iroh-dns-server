@@ -1,3 +1,5 @@
+//! The main server which combines the DNS and HTTP(S) servers.
+
 use anyhow::Result;
 use iroh_metrics::metrics::start_metrics_server;
 use tracing::info;
@@ -6,7 +8,8 @@ use crate::{
     config::Config,
     dns::{DnsHandler, DnsServer},
     http::HttpServer,
-    state::{AppState, ZoneStore},
+    state::AppState,
+    store::ZoneStore,
 };
 
 /// Spawn the server and run until the `Ctrl-C` signal is received, then shutdown.
@@ -19,6 +22,7 @@ pub async fn run_with_config_until_ctrl_c(config: Config) -> Result<()> {
     Ok(())
 }
 
+/// The iroh-dns server.
 pub struct Server {
     http_server: HttpServer,
     dns_server: DnsServer,

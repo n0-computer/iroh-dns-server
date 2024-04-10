@@ -1,3 +1,5 @@
+//! HTTP server part of iroh-dns-server
+
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::Instant,
@@ -33,22 +35,33 @@ use crate::{config::Config, metrics::Metrics};
 
 pub use self::tls::CertMode;
 
+/// Config for the HTTP server
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HttpConfig {
+    /// Port to bind to
     pub port: u16,
+    /// Optionally set a custom bind address (will use 0.0.0.0 if unset)
     pub bind_addr: Option<IpAddr>,
 }
 
+/// Config for the HTTPS server
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HttpsConfig {
+    /// Port to bind to
     pub port: u16,
+    /// Optionally set a custom bind address (will use 0.0.0.0 if unset)
     pub bind_addr: Option<IpAddr>,
+    /// The list of domains for which SSL certificates should be created.
     pub domains: Vec<String>,
+    /// The mode of SSL certificate creation
     pub cert_mode: CertMode,
+    /// Letsencrypt contact email address (required if using [`CertMode::LetsEncrypt`])
     pub letsencrypt_contact: Option<String>,
+    /// Whether to use the letsenrypt production servers (only applies to [`CertMode::LetsEncrypt`])
     pub letsencrypt_prod: Option<bool>,
 }
 
+/// The HTTP(S) server part of iroh-dns-server
 pub struct HttpServer {
     tasks: JoinSet<std::io::Result<()>>,
     http_addr: Option<SocketAddr>,
@@ -56,6 +69,7 @@ pub struct HttpServer {
 }
 
 impl HttpServer {
+    /// Spawn the server
     pub async fn spawn(
         http_config: Option<HttpConfig>,
         https_config: Option<HttpsConfig>,
@@ -130,13 +144,18 @@ impl HttpServer {
             https_addr,
         })
     }
+
+    /// Get the bound address of the HTTP socket.
     pub fn http_addr(&self) -> Option<SocketAddr> {
         self.http_addr
     }
+
+    /// Get the bound address of the HTTPS socket.
     pub fn https_addr(&self) -> Option<SocketAddr> {
         self.https_addr
     }
 
+    /// Shutdown the server and wait for all tasks to complete.
     pub async fn shutdown(mut self) -> Result<()> {
         // TODO: Graceful cancellation.
         self.tasks.abort_all();
@@ -144,6 +163,9 @@ impl HttpServer {
         Ok(())
     }
 
+    /// Wait for all tasks to complete.
+    ///
+    /// Runs forever unless tasks fail.
     pub async fn run_until_done(mut self) -> Result<()> {
         let mut final_res: anyhow::Result<()> = Ok(());
         while let Some(res) = self.tasks.join_next().await {
@@ -164,7 +186,7 @@ impl HttpServer {
     }
 }
 
-pub fn create_app(state: AppState) -> Router {
+pub(crate) fn create_app(state: AppState) -> Router {
     // configure cors middleware
     let cors = CorsLayer::new()
         // allow `GET` and `POST` when accessing the resource

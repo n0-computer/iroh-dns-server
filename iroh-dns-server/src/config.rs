@@ -1,3 +1,5 @@
+//! Configuration for the server
+
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -13,21 +15,42 @@ use crate::{
 
 const DEFAULT_METRICS_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9117);
 
+/// Server configuration
+///
+/// The config is usually loaded from a file with [`Self::load`].
+///
+/// The struct also implements [`Default`] which creates a config suitable for local development
+/// and testing.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
+    /// Config for the HTTP server
+    ///
+    /// If set to `None` no HTTP server will be started.
     pub http: Option<HttpConfig>,
+    /// Config for the HTTPS server
+    ///
+    /// If set to `None` no HTTPS server will be started.
     pub https: Option<HttpsConfig>,
+    /// Config for the DNS server.
     pub dns: DnsConfig,
+    /// Config for the metrics server.
+    ///
+    /// The metrics server is started by default. To disable the metrics server, set to
+    /// `Some(MetricsConfig::disabled())`.
     pub metrics: Option<MetricsConfig>,
 }
 
+/// The config for the metrics server.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MetricsConfig {
-    disabled: bool,
-    bind_addr: Option<SocketAddr>,
+    /// Set to true to disable the metrics server.
+    pub disabled: bool,
+    /// Optionally set a custom address to bind to.
+    pub bind_addr: Option<SocketAddr>,
 }
 
 impl MetricsConfig {
+    /// Disable the metrics server.
     pub fn disabled() -> Self {
         Self {
             disabled: true,
@@ -37,6 +60,7 @@ impl MetricsConfig {
 }
 
 impl Config {
+    /// Load the config from a file.
     pub async fn load(path: impl AsRef<Path>) -> Result<Config> {
         let s = tokio::fs::read_to_string(path.as_ref())
             .await
@@ -45,6 +69,7 @@ impl Config {
         Ok(config)
     }
 
+    /// Get the data directory.
     pub fn data_dir() -> Result<PathBuf> {
         let dir = if let Some(val) = env::var_os("IROH_DNS_DATA_DIR") {
             PathBuf::from(val)
@@ -57,11 +82,13 @@ impl Config {
         Ok(dir)
     }
 
+    /// Get the path to the store database file.
     pub fn signed_packet_store_path() -> Result<PathBuf> {
         Ok(Self::data_dir()?.join("signed-packets-1.db"))
     }
 
-    pub fn metrics_addr(&self) -> Option<SocketAddr> {
+    /// Get the address where the metrics server should be bound, if set.
+    pub(crate) fn metrics_addr(&self) -> Option<SocketAddr> {
         match &self.metrics {
             None => Some(DEFAULT_METRICS_ADDR),
             Some(conf) => match conf.disabled {

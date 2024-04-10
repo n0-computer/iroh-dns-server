@@ -34,15 +34,15 @@ use tokio::{
     sync::broadcast,
 };
 
-use crate::{metrics::Metrics, state::ZoneStore};
+use crate::{metrics::Metrics, store::ZoneStore};
 
 use self::node_authority::NodeAuthority;
 
 mod node_authority;
 
-pub const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 12h
-pub const DEFAULT_SOA_TTL: u32 = 60 * 60 * 24 * 14; // 14d
-pub const DEFAULT_A_TTL: u32 = 60 * 60; // 1h
+const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 12h
+const DEFAULT_SOA_TTL: u32 = 60 * 60 * 24 * 14; // 14d
+const DEFAULT_A_TTL: u32 = 60 * 60; // 1h
 
 /// DNS server settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -67,12 +67,14 @@ pub struct DnsConfig {
     pub rr_ns: Option<String>,
 }
 
+/// A DNS server that serves pkarr signed packets.
 pub struct DnsServer {
     local_addr: SocketAddr,
     server: hickory_server::ServerFuture<DnsHandler>,
 }
 
 impl DnsServer {
+    /// Spawn the server.
     pub async fn spawn(config: DnsConfig, dns_handler: DnsHandler) -> Result<Self> {
         const TCP_TIMEOUT: Duration = Duration::from_millis(1000);
         let mut server = hickory_server::ServerFuture::new(dns_handler);
@@ -96,15 +98,20 @@ impl DnsServer {
         })
     }
 
+    /// Get the local address of the UDP/TCP socket.
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
     }
 
+    /// Shutdown the server an wait for all tasks to complete.
     pub async fn shutdown(mut self) -> Result<()> {
         self.server.shutdown_gracefully().await?;
         Ok(())
     }
 
+    /// Wait for all tasks to complete.
+    ///
+    /// Runs forever unless tasks fail.
     pub async fn run_until_done(mut self) -> Result<()> {
         self.server.block_until_done().await?;
         Ok(())
@@ -115,7 +122,7 @@ impl DnsServer {
 #[derive(Clone, derive_more::Debug)]
 pub struct DnsHandler {
     #[debug("Catalog")]
-    pub catalog: Arc<Catalog>,
+    catalog: Arc<Catalog>,
 }
 
 impl DnsHandler {

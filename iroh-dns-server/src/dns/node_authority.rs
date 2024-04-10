@@ -17,8 +17,10 @@ use hickory_server::{
 
 use tracing::{debug, trace};
 
-use crate::util::PublicKeyBytes;
-use crate::{state::ZoneStore, util::record_set_append_origin};
+use crate::{
+    store::ZoneStore,
+    util::{record_set_append_origin, PublicKeyBytes},
+};
 
 #[derive(derive_more::Debug)]
 pub struct NodeAuthority {

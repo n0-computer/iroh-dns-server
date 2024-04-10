@@ -1,11 +1,15 @@
+//! A DNS server and pkarr relay
+
+#![deny(missing_docs, rustdoc::broken_intra_doc_links)]
+
 pub mod config;
 pub mod dns;
 pub mod http;
 pub mod metrics;
-pub mod run;
+pub mod server;
 pub mod state;
-pub mod store;
-pub mod util;
+mod store;
+mod util;
 
 #[cfg(test)]
 mod tests {
@@ -26,7 +30,7 @@ mod tests {
     };
     use url::Url;
 
-    use crate::run::Server;
+    use crate::server::Server;
 
     #[tokio::test]
     async fn integration_smoke() -> Result<()> {

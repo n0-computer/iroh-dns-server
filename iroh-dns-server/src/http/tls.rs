@@ -17,15 +17,20 @@ use tokio_rustls_acme::{axum::AxumAcceptor, caches::DirCache, AcmeConfig};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info_span, Instrument};
 
+/// The mode how SSL certificates should be created.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, strum::Display)]
 #[serde(rename_all = "snake_case")]
 pub enum CertMode {
+    /// Certs are loaded from a the `cert_cache` path
     Manual,
+    /// ACME with LetsEncrypt servers
     LetsEncrypt,
+    /// Create self-signed certificates and store them in the `cert_cache` path
     SelfSigned,
 }
 
 impl CertMode {
+    /// Build the [`TlsAcceptor`] for this mode.
     pub async fn build(
         &self,
         domains: Vec<String>,

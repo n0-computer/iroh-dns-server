@@ -134,49 +134,6 @@ pub fn signed_packet_to_hickory_records_without_origin(
     Ok((common_zone, output))
 }
 
-pub fn signed_packet_to_hickory_records(
-    signed_packet: &SignedPacket,
-    append_origin: Option<&Name>,
-    filter: impl Fn(&Record) -> bool,
-) -> Result<BTreeMap<RrKey, RecordSet>> {
-    let mut message = signed_packet_to_hickory_message(signed_packet)?;
-    let answers = message.take_answers();
-    let mut output: BTreeMap<RrKey, RecordSet> = BTreeMap::new();
-    for mut record in answers.into_iter() {
-        // disallow SOA and NS records
-        if matches!(record.record_type(), RecordType::SOA | RecordType::NS) {
-            continue;
-        }
-        if !filter(&record) {
-            continue;
-        }
-        // append origin if desired
-        if let Some(origin) = append_origin {
-            let new_name = record.name().clone().append_name(origin)?;
-            record.set_name(new_name);
-        }
-        let rrkey = RrKey::new(record.name().into(), record.record_type());
-        match output.entry(rrkey) {
-            btree_map::Entry::Vacant(e) => {
-                let set: RecordSet = record.into();
-                e.insert(set);
-            }
-            btree_map::Entry::Occupied(mut e) => {
-                let set = e.get_mut();
-                let serial = set.serial();
-                set.insert(record, serial);
-            }
-        }
-    }
-    Ok(output)
-}
-
-pub fn record_append_origin(record: &mut Record, origin: &Name) -> Result<()> {
-    let new_name = record.name().clone().append_name(origin)?;
-    record.set_name(new_name.clone());
-    Ok(())
-}
-
 pub fn record_set_append_origin(
     input: &RecordSet,
     origin: &Name,

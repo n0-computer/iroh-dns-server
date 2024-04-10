@@ -1,7 +1,11 @@
+//! Metrics support for the server
+
 use iroh_metrics::core::{Core, Counter, Metric};
 use struct_iterable::Iterable;
 
+/// Metrics for iroh-dns-server
 #[derive(Debug, Clone, Iterable)]
+#[allow(missing_docs)]
 pub struct Metrics {
     pub pkarr_publish_update: Counter,
     pub pkarr_publish_noop: Counter,
@@ -52,6 +56,7 @@ impl Metric for Metrics {
     }
 }
 
+/// Init the metrics collection core.
 pub fn init_metrics() {
     Core::init(|reg, metrics| {
         metrics.insert(Metrics::new(reg));
