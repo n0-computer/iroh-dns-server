@@ -1,9 +1,11 @@
+use core::fmt;
 use std::{
     collections::{btree_map, BTreeMap},
+    str::FromStr,
     sync::Arc,
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use hickory_proto::{
     op::Message,
     rr::{
@@ -13,6 +15,71 @@ use hickory_proto::{
     serialize::binary::BinDecodable,
 };
 use pkarr::SignedPacket;
+
+#[derive(derive_more::From, derive_more::Into, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct PublicKeyBytes([u8; 32]);
+
+impl PublicKeyBytes {
+    pub fn from_z32(s: &str) -> Result<Self> {
+        let bytes = z32::decode(s.as_bytes())?;
+        let bytes: [u8; 32] = bytes.try_into().map_err(|_| anyhow!("invalid length"))?;
+        Ok(Self(bytes))
+    }
+
+    pub fn to_z32(&self) -> String {
+        z32::encode(&self.0)
+    }
+
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    pub fn from_signed_packet(packet: &SignedPacket) -> Self {
+        Self(packet.public_key().to_bytes())
+    }
+}
+
+impl fmt::Display for PublicKeyBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_z32())
+    }
+}
+
+impl fmt::Debug for PublicKeyBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PublicKeyBytes({})", self.to_z32())
+    }
+}
+
+impl From<pkarr::PublicKey> for PublicKeyBytes {
+    fn from(value: pkarr::PublicKey) -> Self {
+        Self(value.to_bytes())
+    }
+}
+
+impl TryFrom<PublicKeyBytes> for pkarr::PublicKey {
+    type Error = anyhow::Error;
+    fn try_from(value: PublicKeyBytes) -> Result<Self, Self::Error> {
+        pkarr::PublicKey::try_from(value.0).map_err(anyhow::Error::from)
+    }
+}
+
+impl FromStr for PublicKeyBytes {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_z32(s)
+    }
+}
+
+impl AsRef<[u8; 32]> for PublicKeyBytes {
+    fn as_ref(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
 
 pub fn signed_packet_to_hickory_message(signed_packet: &SignedPacket) -> Result<Message> {
     let encoded = signed_packet.encoded_packet();

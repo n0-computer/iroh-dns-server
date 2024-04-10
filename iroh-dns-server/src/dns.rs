@@ -38,10 +38,8 @@ use tracing::info;
 use self::node_authority::NodeAuthority;
 
 mod node_authority;
-use crate::config::Config;
 use crate::metrics::Metrics;
-use crate::store::SignedPacketStore;
-pub use node_authority::PacketSource;
+use crate::state::ZoneStore;
 
 pub const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 12h
 pub const DEFAULT_SOA_TTL: u32 = 60 * 60 * 24 * 14; // 14d
@@ -104,7 +102,7 @@ pub struct DnsServer {
 impl DnsServer {
     /// Create a DNS server given some settings, a connection to the DB for DID-by-username lookups
     /// and the server DID to serve under `_did.<origin>`.
-    pub fn new(config: &DnsConfig) -> Result<Self> {
+    pub fn new(zone_store: ZoneStore, config: &DnsConfig) -> Result<Self> {
         let default_soa = RData::parse(
             RecordType::SOA,
             config.default_soa.split_ascii_whitespace(),
@@ -112,8 +110,11 @@ impl DnsServer {
         )?
         .into_soa()
         .map_err(|_| anyhow!("Couldn't parse SOA: {}", config.default_soa))?;
-        let store = SignedPacketStore::open_file(Config::signed_packet_store_path()?)?;
-        let authority = Arc::new(Self::setup_authority(store, default_soa.clone(), config)?);
+        let authority = Arc::new(Self::setup_authority(
+            zone_store,
+            default_soa.clone(),
+            config,
+        )?);
 
         let catalog = {
             let mut catalog = Catalog::new();
@@ -145,7 +146,7 @@ impl DnsServer {
     }
 
     fn setup_authority(
-        store: SignedPacketStore,
+        zone_store: ZoneStore,
         default_soa: rdata::SOA,
         config: &DnsConfig,
     ) -> Result<NodeAuthority> {
@@ -197,8 +198,13 @@ impl DnsServer {
             InMemoryAuthority::new(origin.clone(), records, ZoneType::Primary, false)
                 .map_err(|e| anyhow!(e))?;
 
-        let authority =
-            NodeAuthority::new(store, static_authority, origin, additional_origins, serial)?;
+        let authority = NodeAuthority::new(
+            zone_store,
+            static_authority,
+            origin,
+            additional_origins,
+            serial,
+        )?;
 
         Ok(authority)
     }

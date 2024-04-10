@@ -1,16 +1,14 @@
 use std::path::Path;
 
 use anyhow::Result;
-use bytes::Bytes;
 use iroh_metrics::inc;
-use pkarr::{PublicKey, SignedPacket};
+use pkarr::SignedPacket;
 use redb::{backends::InMemoryBackend, Database, ReadableTable, TableDefinition};
 
-use crate::metrics::Metrics;
+use crate::{metrics::Metrics, util::PublicKeyBytes};
 
-type PublicKeyBytes = [u8; 32];
-
-const SIGNED_PACKETS_TABLE: TableDefinition<&PublicKeyBytes, &[u8]> =
+pub type SignedPacketsKey = [u8; 32];
+const SIGNED_PACKETS_TABLE: TableDefinition<&SignedPacketsKey, &[u8]> =
     TableDefinition::new("signed-packets-1");
 
 #[derive(Debug)]
@@ -42,36 +40,37 @@ impl SignedPacketStore {
     }
 
     pub fn upsert(&self, packet: SignedPacket) -> Result<bool> {
-        let key = packet.public_key();
+        let key = PublicKeyBytes::from_signed_packet(&packet);
         let tx = self.db.begin_write()?;
-        let mut inserted = true;
+        let mut replaced = false;
         {
             let mut table = tx.open_table(SIGNED_PACKETS_TABLE)?;
-            if let Some(existing) = get_packet(&table, key)? {
-                inserted = false;
+            if let Some(existing) = get_packet(&table, &key)? {
                 if existing.more_recent_than(&packet) {
                     return Ok(false);
+                } else {
+                    replaced = true;
                 }
             }
             let value = packet.as_bytes();
-            table.insert(&key.to_bytes(), &value[..])?;
+            table.insert(key.as_bytes(), &value[..])?;
         }
         tx.commit()?;
-        if inserted {
-            inc!(Metrics, store_packets_inserted);
-        } else {
+        if replaced {
             inc!(Metrics, store_packets_updated);
+        } else {
+            inc!(Metrics, store_packets_inserted);
         }
         Ok(true)
     }
 
-    pub fn get(&self, key: &PublicKey) -> Result<Option<SignedPacket>> {
+    pub fn get(&self, key: &PublicKeyBytes) -> Result<Option<SignedPacket>> {
         let tx = self.db.begin_read()?;
         let table = tx.open_table(SIGNED_PACKETS_TABLE)?;
         get_packet(&table, key)
     }
 
-    pub fn remove(&self, key: &PublicKey) -> Result<bool> {
+    pub fn remove(&self, key: &PublicKeyBytes) -> Result<bool> {
         let tx = self.db.begin_write()?;
         let updated = {
             let mut table = tx.open_table(SIGNED_PACKETS_TABLE)?;
@@ -85,28 +84,13 @@ impl SignedPacketStore {
         }
         Ok(updated)
     }
-
-    pub fn iter(&self) -> Result<impl Iterator<Item = Result<SignedPacket>>> {
-        let tx = self.db.begin_read()?;
-        let table = tx.open_table(SIGNED_PACKETS_TABLE)?;
-        let range = table.range::<&PublicKeyBytes>(..)?;
-        let iter = range.map(|row| match row {
-            Err(err) => Err(anyhow::Error::from(err)),
-            Ok((_k, v)) => {
-                let value = Bytes::from(v.value().to_vec());
-                let packet = SignedPacket::from_bytes(value, false)?;
-                Ok(packet)
-            }
-        });
-        Ok(iter)
-    }
 }
 
 fn get_packet(
-    table: &impl ReadableTable<&'static PublicKeyBytes, &'static [u8]>,
-    key: &PublicKey,
+    table: &impl ReadableTable<&'static SignedPacketsKey, &'static [u8]>,
+    key: &PublicKeyBytes,
 ) -> Result<Option<SignedPacket>> {
-    let Some(row) = table.get(&key.to_bytes())? else {
+    let Some(row) = table.get(key.as_ref())? else {
         return Ok(None);
     };
     let packet = SignedPacket::from_bytes(row.value().to_vec().into(), false)?;

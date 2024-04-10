@@ -29,7 +29,7 @@ pub async fn get(
     State(state): State<AppState>,
     DnsRequestQuery(request, accept_type): DnsRequestQuery,
 ) -> AppResult<Response> {
-    let message_bytes = state.dns_server.answer_request(request).await?;
+    let message_bytes = state.dns_handler.answer_request(request).await?;
     let message = proto::op::Message::from_bytes(&message_bytes).map_err(|e| anyhow!(e))?;
 
     let min_ttl = message.answers().iter().map(|rec| rec.ttl()).min();
@@ -60,7 +60,7 @@ pub async fn post(
     State(state): State<AppState>,
     DnsRequestBody(request): DnsRequestBody,
 ) -> Response {
-    let response = match state.dns_server.answer_request(request).await {
+    let response = match state.dns_handler.answer_request(request).await {
         Ok(response) => response,
         Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
     };
@@ -73,6 +73,7 @@ pub async fn post(
         .into_response()
 }
 
+// TODO: These tests were copied from fission-server, check and enable.
 // #[cfg(test)]
 // mod tests {
 //     use crate::{db::schema::accounts, test_utils::test_context::TestContext};

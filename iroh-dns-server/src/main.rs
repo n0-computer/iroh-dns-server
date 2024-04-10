@@ -7,6 +7,8 @@ use futures::{Future, FutureExt};
 use iroh_dns_server::{self as server, config::Config, dns::DnsServer, state::AppState};
 use iroh_metrics::metrics::start_metrics_server;
 use server::metrics::init_metrics;
+use server::state::ZoneStore;
+use server::store::SignedPacketStore;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use tokio::task::JoinSet;
@@ -33,9 +35,13 @@ async fn main() -> Result<()> {
 
     init_metrics();
 
-    let dns_server = DnsServer::new(&config.dns)?;
+    let packet_store = SignedPacketStore::open_file(Config::signed_packet_store_path()?)?;
+    let store = ZoneStore::new(packet_store);
+    let dns_server = DnsServer::new(store.clone(), &config.dns)?;
+
     let state = AppState {
-        dns_server: dns_server.clone(),
+        store,
+        dns_handler: dns_server.clone(),
     };
 
     let cancel = CancellationToken::new();

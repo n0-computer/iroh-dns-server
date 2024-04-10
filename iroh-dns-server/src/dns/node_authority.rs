@@ -1,14 +1,10 @@
-use std::{
-    collections::{btree_map, BTreeMap},
-    fmt,
-    sync::Arc,
-};
+use std::{fmt, sync::Arc};
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use hickory_proto::{
     op::ResponseCode,
-    rr::{LowerName, Name, RecordSet, RecordType, RrKey},
+    rr::{LowerName, Name, RecordType},
 };
 use hickory_server::{
     authority::{
@@ -19,61 +15,24 @@ use hickory_server::{
     store::in_memory::InMemoryAuthority,
 };
 
-use iroh_metrics::inc;
-use parking_lot::RwLock;
-use pkarr::SignedPacket;
 use tracing::{debug, trace};
 
-use crate::util::{record_set_append_origin, signed_packet_to_hickory_records_without_origin};
-use crate::{metrics::Metrics, store::SignedPacketStore};
-
-pub enum PacketSource {
-    PkarrPublish,
-    Mainline,
-}
-
-pub type PublicKeyBytes = [u8; 32];
+use crate::util::PublicKeyBytes;
+use crate::{state::ZoneStore, util::record_set_append_origin};
 
 #[derive(derive_more::Debug)]
 pub struct NodeAuthority {
     serial: u32,
     primary_origin: LowerName,
-    all_origins: Vec<Name>,
-
-    store: SignedPacketStore,
+    origins: Vec<Name>,
     #[debug("InMemoryAuthority")]
     static_authority: InMemoryAuthority,
-    zones: RwLock<BTreeMap<PublicKeyBytes, PkarrZone>>,
-}
-
-#[derive(Debug)]
-struct PkarrZone {
-    timestamp: u64,
-    records: BTreeMap<RrKey, Arc<RecordSet>>,
-}
-
-impl PkarrZone {
-    fn from_signed_packet(signed_packet: &SignedPacket) -> Result<Self> {
-        let (_label, records) =
-            signed_packet_to_hickory_records_without_origin(signed_packet, |_| true)?;
-        Ok(Self {
-            records,
-            timestamp: *signed_packet.timestamp(),
-        })
-    }
-
-    fn older_than(&self, signed_packet: &SignedPacket) -> bool {
-        *signed_packet.timestamp() > self.timestamp
-    }
-
-    fn records(&self) -> &BTreeMap<RrKey, Arc<RecordSet>> {
-        &self.records
-    }
+    zones: ZoneStore,
 }
 
 impl NodeAuthority {
     pub fn new(
-        store: SignedPacketStore,
+        zones: ZoneStore,
         static_authority: InMemoryAuthority,
         primary_origin: Name,
         additional_origins: Vec<Name>,
@@ -85,84 +44,25 @@ impl NodeAuthority {
             o.extend_from_slice(&additional_origins);
             o
         };
-        let this = Self {
+        Ok(Self {
             static_authority,
             primary_origin: primary_origin.into(),
-            all_origins: origins,
+            origins,
             serial,
-            store,
-            zones: Default::default(),
-        };
-        for packet in this.store.iter()? {
-            let packet = packet?;
-            this.upsert_pkarr_zone(&packet)?;
-        }
-        Ok(this)
+            zones,
+        })
     }
+
     pub fn all_origins(&self) -> impl Iterator<Item = &Name> {
-        self.all_origins.iter()
+        self.origins.iter()
     }
 
     pub fn origin_is_allowed(&self, origin: &Name) -> bool {
-        self.all_origins.contains(origin)
+        self.origins.contains(origin)
     }
 
     pub fn serial(&self) -> u32 {
         self.serial
-    }
-
-    // todo: less clones
-    pub fn resolve_pkarr(
-        &self,
-        public_key: &pkarr::PublicKey,
-        name: &Name,
-        record_type: RecordType,
-    ) -> Option<Arc<RecordSet>> {
-        let key = RrKey::new(name.into(), record_type);
-        self.zones
-            .read()
-            .get(&public_key.to_bytes())
-            .and_then(|zone| zone.records().get(&key))
-            .map(Arc::clone)
-    }
-
-    pub fn upsert_pkarr(&self, signed_packet: SignedPacket, _source: PacketSource) -> Result<bool> {
-        let updated = match self.upsert_pkarr_zone(&signed_packet) {
-            Ok(updated) => updated,
-            Err(err) => {
-                inc!(Metrics, pkarr_publish_error);
-                return Err(err);
-            }
-        };
-        if updated {
-            self.store.upsert(signed_packet)?;
-            inc!(Metrics, pkarr_publish_update);
-        } else {
-            inc!(Metrics, pkarr_publish_noop);
-        }
-        Ok(updated)
-    }
-
-    pub fn store(&self) -> &SignedPacketStore {
-        &self.store
-    }
-
-    fn upsert_pkarr_zone(&self, signed_packet: &SignedPacket) -> Result<bool> {
-        let key = signed_packet.public_key().to_bytes();
-        let mut updated = false;
-        match self.zones.write().entry(key) {
-            btree_map::Entry::Vacant(e) => {
-                e.insert(PkarrZone::from_signed_packet(signed_packet)?);
-                updated = true;
-            }
-            btree_map::Entry::Occupied(mut e) => {
-                if e.get().older_than(signed_packet) {
-                    e.insert(PkarrZone::from_signed_packet(signed_packet)?);
-                    updated = true;
-                }
-            }
-        }
-        Ok(updated)
     }
 }
 
@@ -199,37 +99,36 @@ impl Authority for NodeAuthority {
                     .lookup(name, record_type, lookup_options)
                     .await
             }
-            _ => {
-                let name2: Name = name.into();
-                match split_and_parse_pkarr(&name2, &self.all_origins) {
-                    Err(err) => {
-                        debug!("name {name2} does not match pkarr: {err}");
-                        self.static_authority
-                            .lookup(name, record_type, lookup_options)
-                            .await
-                    }
-                    Ok((name, pkey, origin)) => {
-                        debug!("name {name2} resolved to ({name}) ({pkey}) ({origin})");
-                        match self.resolve_pkarr(&pkey, &name, record_type) {
-                            Some(pkarr_set) => {
-                                let new_origin = Name::parse(&pkey.to_z32(), Some(&origin))
-                                    .map_err(err_refused)?;
-                                let record_set = record_set_append_origin(
-                                    &pkarr_set,
-                                    &new_origin,
-                                    self.serial(),
-                                )
+            _ => match split_and_parse_pkarr(name, &self.origins) {
+                Err(err) => {
+                    trace!(%name, ?err, "name is not a pkarr zone");
+                    debug!("resolve static: name {name}");
+                    self.static_authority
+                        .lookup(name, record_type, lookup_options)
+                        .await
+                }
+                Ok((name, pubkey, origin)) => {
+                    debug!(%origin, "resolve pkarr: {name} {pubkey}");
+                    match self
+                        .zones
+                        .resolve(&pubkey, &name, record_type)
+                        .await
+                        .map_err(err_refused)?
+                    {
+                        Some(pkarr_set) => {
+                            let new_origin = Name::parse(&pubkey.to_z32(), Some(&origin))
                                 .map_err(err_refused)?;
-                                let records =
-                                    LookupRecords::new(lookup_options, Arc::new(record_set));
-                                let answers = AuthLookup::answers(records, None);
-                                Ok(answers)
-                            }
-                            None => Err(err_nx_domain("not found")),
+                            let record_set =
+                                record_set_append_origin(&pkarr_set, &new_origin, self.serial())
+                                    .map_err(err_refused)?;
+                            let records = LookupRecords::new(lookup_options, Arc::new(record_set));
+                            let answers = AuthLookup::answers(records, None);
+                            Ok(answers)
                         }
+                        None => Err(err_nx_domain("not found")),
                     }
                 }
-            }
+            },
         }
     }
 
@@ -262,13 +161,14 @@ impl Authority for NodeAuthority {
 }
 
 fn split_and_parse_pkarr(
-    name: &Name,
+    name: impl Into<Name>,
     allowed_origins: &[Name],
-) -> Result<(Name, pkarr::PublicKey, Name)> {
+) -> Result<(Name, PublicKeyBytes, Name)> {
+    let name = name.into();
     trace!("resolve {name}");
     for origin in allowed_origins.iter() {
         trace!("try {origin}");
-        if !origin.zone_of(name) {
+        if !origin.zone_of(&name) {
             continue;
         }
         if name.num_labels() < origin.num_labels() + 1 {
@@ -278,7 +178,8 @@ fn split_and_parse_pkarr(
         let labels = name.iter().rev();
         let mut labels_without_origin = labels.skip(origin.num_labels() as usize);
         let pkey_label = labels_without_origin.next().expect("length checked above");
-        let pkey = pkarr::PublicKey::try_from(std::str::from_utf8(pkey_label)?)?;
+        let pkey_str = std::str::from_utf8(pkey_label)?;
+        let pkey = PublicKeyBytes::from_z32(pkey_str)?;
         let remaining_name = Name::from_labels(labels_without_origin)?;
         return Ok((remaining_name, pkey, origin.clone()));
     }
