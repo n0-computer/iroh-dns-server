@@ -1,3 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["iroh-dns-server"]
+
+[patch."https://github.com/n0-computer/iroh.git"]
+iroh-net = { path = "../iroh/iroh-net" }
