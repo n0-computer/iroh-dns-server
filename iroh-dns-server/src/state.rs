@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, num::NonZeroUsize, sync::Arc};
+use std::{collections::BTreeMap, num::NonZeroUsize, path::Path, sync::Arc};
 
 use anyhow::Result;
 use hickory_proto::rr::{Name, RecordSet, RecordType, RrKey};
@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use pkarr::SignedPacket;
 
 use crate::{
-    dns::DnsServer,
+    dns::DnsHandler,
     metrics::Metrics,
     store::SignedPacketStore,
     util::{signed_packet_to_hickory_records_without_origin, PublicKeyBytes},
@@ -20,7 +20,7 @@ pub const DEFAULT_CACHE_CAPACITY: usize = 1024 * 1024;
 #[derive(Clone)]
 pub struct AppState {
     pub store: ZoneStore,
-    pub dns_handler: DnsServer,
+    pub dns_handler: DnsHandler,
 }
 
 pub enum PacketSource {
@@ -35,6 +35,17 @@ pub struct ZoneStore {
 }
 
 impl ZoneStore {
+    pub fn persistent(path: impl AsRef<Path>) -> Result<Self> {
+        let packet_store = SignedPacketStore::persistent(path)?;
+        Ok(Self::new(packet_store))
+    }
+
+    #[cfg(test)]
+    pub fn in_memory() -> Result<Self> {
+        let packet_store = SignedPacketStore::in_memory()?;
+        Ok(Self::new(packet_store))
+    }
+
     /// Create a new zone store.
     pub fn new(store: SignedPacketStore) -> Self {
         let zone_cache = ZoneCache::new(DEFAULT_CACHE_CAPACITY);

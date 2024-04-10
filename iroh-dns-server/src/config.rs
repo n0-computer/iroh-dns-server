@@ -27,6 +27,15 @@ pub struct MetricsConfig {
     bind_addr: Option<SocketAddr>,
 }
 
+impl MetricsConfig {
+    pub fn disabled() -> Self {
+        Self {
+            disabled: true,
+            bind_addr: None,
+        }
+    }
+}
+
 impl Config {
     pub async fn load(path: impl AsRef<Path>) -> Result<Config> {
         let s = tokio::fs::read_to_string(path.as_ref())
@@ -66,23 +75,30 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            http: Some(HttpConfig { port: 8080 }),
+            http: Some(HttpConfig {
+                port: 8080,
+                bind_addr: None,
+            }),
             https: Some(HttpsConfig {
                 port: 8443,
+                bind_addr: None,
                 domains: vec!["localhost".to_string()],
                 cert_mode: CertMode::SelfSigned,
                 letsencrypt_contact: None,
-                letsencrypt_prod: false,
+                letsencrypt_prod: None,
             }),
             dns: DnsConfig {
+                port: 5300,
+                bind_addr: None,
+                origins: vec!["irohdns.example.".to_string(), ".".to_string()],
+
                 default_soa: "irohdns.example hostmaster.irohdns.example 0 10800 3600 604800 3600"
                     .to_string(),
-                origin: "irohdns.example.".to_string(),
-                port: 5300,
                 default_ttl: 900,
-                additional_origins: vec![".".to_string()],
-                ipv4_addr: Some(Ipv4Addr::LOCALHOST),
-                ns_name: Some("ns1.irohdns.example.".to_string()),
+
+                rr_a: Some(Ipv4Addr::LOCALHOST),
+                rr_aaaa: None,
+                rr_ns: Some("ns1.irohdns.example.".to_string()),
             },
             metrics: None,
         }

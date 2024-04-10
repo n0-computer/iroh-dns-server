@@ -1,6 +1,6 @@
 use std::{fmt, sync::Arc};
 
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use async_trait::async_trait;
 use hickory_proto::{
     op::ResponseCode,
@@ -23,42 +23,35 @@ use crate::{state::ZoneStore, util::record_set_append_origin};
 #[derive(derive_more::Debug)]
 pub struct NodeAuthority {
     serial: u32,
-    primary_origin: LowerName,
     origins: Vec<Name>,
     #[debug("InMemoryAuthority")]
     static_authority: InMemoryAuthority,
     zones: ZoneStore,
+    // TODO: This is used by Authority::origin
+    // Find out what exactly this is used for - we don't have a primary origin.
+    first_origin: LowerName,
 }
 
 impl NodeAuthority {
     pub fn new(
         zones: ZoneStore,
         static_authority: InMemoryAuthority,
-        primary_origin: Name,
-        additional_origins: Vec<Name>,
+        origins: Vec<Name>,
         serial: u32,
     ) -> Result<Self> {
-        let origins = {
-            let mut o = Vec::with_capacity(additional_origins.len());
-            o.push(primary_origin.clone());
-            o.extend_from_slice(&additional_origins);
-            o
-        };
+        ensure!(!origins.is_empty(), "at least one origin is required");
+        let first_origin = LowerName::from(&origins[0]);
         Ok(Self {
             static_authority,
-            primary_origin: primary_origin.into(),
             origins,
             serial,
             zones,
+            first_origin,
         })
     }
 
-    pub fn all_origins(&self) -> impl Iterator<Item = &Name> {
+    pub fn origins(&self) -> impl Iterator<Item = &Name> {
         self.origins.iter()
-    }
-
-    pub fn origin_is_allowed(&self, origin: &Name) -> bool {
-        self.origins.contains(origin)
     }
 
     pub fn serial(&self) -> u32 {
@@ -82,9 +75,8 @@ impl Authority for NodeAuthority {
         Err(ResponseCode::NotImp)
     }
 
-    /// Get the origin of this zone, i.e. example.com is the origin for www.example.com
     fn origin(&self) -> &LowerName {
-        &self.primary_origin
+        &self.first_origin
     }
 
     async fn lookup(

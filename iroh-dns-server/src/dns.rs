@@ -1,5 +1,13 @@
 //! Implementation of a DNS name server for iroh node announces
 
+use std::{
+    collections::BTreeMap,
+    io,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
+
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -21,25 +29,16 @@ use hickory_server::{
 use iroh_metrics::inc;
 use proto::{op::ResponseCode, rr::LowerName};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeMap,
-    io,
-    net::{Ipv4Addr, SocketAddrV4},
-    sync::Arc,
-    time::Duration,
-};
 use tokio::{
     net::{TcpListener, UdpSocket},
     sync::broadcast,
 };
-use tokio_util::sync::CancellationToken;
-use tracing::info;
+
+use crate::{metrics::Metrics, state::ZoneStore};
 
 use self::node_authority::NodeAuthority;
 
 mod node_authority;
-use crate::metrics::Metrics;
-use crate::state::ZoneStore;
 
 pub const DEFAULT_NS_TTL: u32 = 60 * 60 * 12; // 12h
 pub const DEFAULT_SOA_TTL: u32 = 60 * 60 * 24 * 14; // 14d
@@ -50,85 +49,96 @@ pub const DEFAULT_A_TTL: u32 = 60 * 60; // 1h
 pub struct DnsConfig {
     /// The port to serve a local UDP DNS server at
     pub port: u16,
+    /// The IPv4 or IPv6 address to bind the UDP DNS server.
+    /// Uses `0.0.0.0` if unspecified.
+    pub bind_addr: Option<IpAddr>,
     /// SOA record data for any authoritative DNS records
     pub default_soa: String,
     /// Default time to live for returned DNS records (TXT & SOA)
     pub default_ttl: u32,
     /// Domain used for serving the `_iroh_node.<nodeid>.<origin>` DNS TXT entry
-    pub origin: String,
-    /// Domains where CNAME records will be set on `iroh_node.<nodeid>.origin`
-    pub additional_origins: Vec<String>,
-    pub ipv4_addr: Option<Ipv4Addr>,
-    pub ns_name: Option<String>,
+    pub origins: Vec<String>,
+
+    /// `A` record to set for all origins
+    pub rr_a: Option<Ipv4Addr>,
+    /// `AAAA` record to set for all origins
+    pub rr_aaaa: Option<Ipv6Addr>,
+    /// `NS` record to set for all origins
+    pub rr_ns: Option<String>,
 }
 
-pub async fn serve(
-    config: DnsConfig,
-    dns_server: DnsServer,
-    token: CancellationToken,
-) -> Result<()> {
-    const TCP_TIMEOUT: Duration = Duration::from_millis(1000);
-    let mut server = hickory_server::ServerFuture::new(dns_server);
-
-    let ip4_addr = config
-        .ipv4_addr
-        .unwrap_or_else(|| Ipv4Addr::new(127, 0, 0, 1));
-    let sock_addr = SocketAddrV4::new(ip4_addr, config.port);
-
-    server.register_socket(UdpSocket::bind(sock_addr).await?);
-    server.register_listener(TcpListener::bind(sock_addr).await?, TCP_TIMEOUT);
-    tracing::info!("DNS server listening on {}", sock_addr);
-
-    tokio::select! {
-        _ = server.block_until_done() => {
-            info!("Background tasks for DNS server all terminated.")
-        },
-        _ = token.cancelled() => {},
-    };
-
-    Ok(())
+pub struct DnsServer {
+    local_addr: SocketAddr,
+    server: hickory_server::ServerFuture<DnsHandler>,
 }
+
+impl DnsServer {
+    pub async fn spawn(config: DnsConfig, dns_handler: DnsHandler) -> Result<Self> {
+        const TCP_TIMEOUT: Duration = Duration::from_millis(1000);
+        let mut server = hickory_server::ServerFuture::new(dns_handler);
+
+        let bind_addr = SocketAddr::new(
+            config.bind_addr.unwrap_or(Ipv4Addr::UNSPECIFIED.into()),
+            config.port,
+        );
+
+        let socket = UdpSocket::bind(bind_addr).await?;
+
+        let socket_addr = socket.local_addr()?;
+
+        server.register_socket(socket);
+        server.register_listener(TcpListener::bind(bind_addr).await?, TCP_TIMEOUT);
+        tracing::info!("DNS server listening on {}", bind_addr);
+
+        Ok(Self {
+            server,
+            local_addr: socket_addr,
+        })
+    }
+
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
+    }
+
+    pub async fn shutdown(mut self) -> Result<()> {
+        self.server.shutdown_gracefully().await?;
+        Ok(())
+    }
+
+    pub async fn run_until_done(mut self) -> Result<()> {
+        self.server.block_until_done().await?;
+        Ok(())
+    }
+}
+
 /// State for serving DNS
 #[derive(Clone, derive_more::Debug)]
-pub struct DnsServer {
-    pub authority: Arc<NodeAuthority>,
-    /// The default SOA record used for all zones that this DNS server controls
-    pub default_soa: rdata::SOA,
-    pub default_ttl: u32,
+pub struct DnsHandler {
     #[debug("Catalog")]
     pub catalog: Arc<Catalog>,
 }
 
-impl DnsServer {
+impl DnsHandler {
     /// Create a DNS server given some settings, a connection to the DB for DID-by-username lookups
     /// and the server DID to serve under `_did.<origin>`.
     pub fn new(zone_store: ZoneStore, config: &DnsConfig) -> Result<Self> {
-        let default_soa = RData::parse(
-            RecordType::SOA,
-            config.default_soa.split_ascii_whitespace(),
-            None,
-        )?
-        .into_soa()
-        .map_err(|_| anyhow!("Couldn't parse SOA: {}", config.default_soa))?;
-        let authority = Arc::new(Self::setup_authority(
-            zone_store,
-            default_soa.clone(),
-            config,
-        )?);
+        let origins = config
+            .origins
+            .iter()
+            .map(Name::from_utf8)
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let catalog = {
-            let mut catalog = Catalog::new();
-            for origin in authority.all_origins() {
-                catalog.upsert(LowerName::from(origin), Box::new(Arc::clone(&authority)));
-            }
-            catalog
-        };
+        let (static_authority, serial) = create_static_authority(&origins, config)?;
+        let authority = NodeAuthority::new(zone_store, static_authority, origins, serial)?;
+        let authority = Arc::new(authority);
+
+        let mut catalog = Catalog::new();
+        for origin in authority.origins() {
+            catalog.upsert(LowerName::from(origin), Box::new(Arc::clone(&authority)));
+        }
 
         Ok(Self {
-            authority,
             catalog: Arc::new(catalog),
-            default_ttl: config.default_ttl,
-            default_soa,
         })
     }
 
@@ -144,74 +154,10 @@ impl DnsServer {
         tracing::debug!("Done handling request, trying to resolve response");
         Ok(rx.recv().await?)
     }
-
-    fn setup_authority(
-        zone_store: ZoneStore,
-        default_soa: rdata::SOA,
-        config: &DnsConfig,
-    ) -> Result<NodeAuthority> {
-        let serial = default_soa.serial();
-        let origin = Name::parse(&config.origin, Some(&Name::root()))?;
-        let additional_origins = config
-            .additional_origins
-            .iter()
-            .map(|o| {
-                Name::parse(o, Some(&Name::root())).map_err(|e| anyhow!("invalid origin {o}: {e}"))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let all_origins = Some(origin.clone())
-            .into_iter()
-            .chain(additional_origins.clone())
-            .collect::<Vec<_>>();
-
-        let mut records = BTreeMap::new();
-        push_record(
-            &mut records,
-            serial,
-            Record::from_rdata(origin.clone(), DEFAULT_SOA_TTL, RData::SOA(default_soa)),
-        );
-        if let Some(addr) = config.ipv4_addr {
-            for name in &all_origins {
-                push_record(
-                    &mut records,
-                    serial,
-                    Record::from_rdata(name.clone(), DEFAULT_A_TTL, RData::A(addr.into())),
-                );
-            }
-        }
-
-        if let Some(ns_name) = &config.ns_name {
-            let ns = Name::parse(ns_name, Some(&Name::root()))?;
-            for name in &all_origins {
-                push_record(
-                    &mut records,
-                    serial,
-                    Record::from_rdata(
-                        name.clone(),
-                        DEFAULT_NS_TTL,
-                        RData::NS(rdata::NS(ns.clone())),
-                    ),
-                );
-            }
-        }
-        let static_authority =
-            InMemoryAuthority::new(origin.clone(), records, ZoneType::Primary, false)
-                .map_err(|e| anyhow!(e))?;
-
-        let authority = NodeAuthority::new(
-            zone_store,
-            static_authority,
-            origin,
-            additional_origins,
-            serial,
-        )?;
-
-        Ok(authority)
-    }
 }
 
 #[async_trait::async_trait]
-impl RequestHandler for DnsServer {
+impl RequestHandler for DnsHandler {
     async fn handle_request<R: ResponseHandler>(
         &self,
         request: &Request,
@@ -265,6 +211,55 @@ impl ResponseHandler for Handle {
 
         Ok(info)
     }
+}
+
+fn create_static_authority(
+    origins: &[Name],
+    config: &DnsConfig,
+) -> Result<(InMemoryAuthority, u32)> {
+    let soa = RData::parse(
+        RecordType::SOA,
+        config.default_soa.split_ascii_whitespace(),
+        None,
+    )?
+    .into_soa()
+    .map_err(|_| anyhow!("Couldn't parse SOA: {}", config.default_soa))?;
+    let serial = soa.serial();
+    let mut records = BTreeMap::new();
+    for name in origins {
+        push_record(
+            &mut records,
+            serial,
+            Record::from_rdata(name.clone(), DEFAULT_SOA_TTL, RData::SOA(soa.clone())),
+        );
+        if let Some(addr) = config.rr_a {
+            push_record(
+                &mut records,
+                serial,
+                Record::from_rdata(name.clone(), DEFAULT_A_TTL, RData::A(addr.into())),
+            );
+        }
+        if let Some(addr) = config.rr_aaaa {
+            push_record(
+                &mut records,
+                serial,
+                Record::from_rdata(name.clone(), DEFAULT_A_TTL, RData::AAAA(addr.into())),
+            );
+        }
+        if let Some(ns) = &config.rr_ns {
+            let ns = Name::parse(ns, Some(&Name::root()))?;
+            push_record(
+                &mut records,
+                serial,
+                Record::from_rdata(name.clone(), DEFAULT_NS_TTL, RData::NS(rdata::NS(ns))),
+            );
+        }
+    }
+
+    let static_authority = InMemoryAuthority::new(Name::root(), records, ZoneType::Primary, false)
+        .map_err(|e| anyhow!(e))?;
+
+    Ok((static_authority, serial))
 }
 
 fn push_record(records: &mut BTreeMap<RrKey, RecordSet>, serial: u32, record: Record) {

@@ -17,7 +17,7 @@ pub struct SignedPacketStore {
 }
 
 impl SignedPacketStore {
-    pub fn open_file(path: impl AsRef<Path>) -> Result<Self> {
+    pub fn persistent(path: impl AsRef<Path>) -> Result<Self> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -25,7 +25,7 @@ impl SignedPacketStore {
         Self::open(db)
     }
 
-    pub fn open_inmemory() -> Result<Self> {
+    pub fn in_memory() -> Result<Self> {
         let db = Database::builder().create_with_backend(InMemoryBackend::new())?;
         Self::open(db)
     }

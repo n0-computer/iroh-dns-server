@@ -1,5 +1,5 @@
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     time::Instant,
 };
 
@@ -15,13 +15,12 @@ use axum::{
 };
 use iroh_metrics::{inc, inc_by};
 use serde::{Deserialize, Serialize};
-use tokio::task::JoinSet;
-use tokio_util::sync::CancellationToken;
+use tokio::{net::TcpListener, task::JoinSet};
 use tower_http::{
     cors::{self, CorsLayer},
     trace::TraceLayer,
 };
-use tracing::{info, span, Level};
+use tracing::{info, span, warn, Level};
 
 mod doh;
 mod error;
@@ -37,27 +36,135 @@ pub use self::tls::CertMode;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HttpConfig {
     pub port: u16,
+    pub bind_addr: Option<IpAddr>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HttpsConfig {
     pub port: u16,
+    pub bind_addr: Option<IpAddr>,
     pub domains: Vec<String>,
     pub cert_mode: CertMode,
     pub letsencrypt_contact: Option<String>,
-    pub letsencrypt_prod: bool,
+    pub letsencrypt_prod: Option<bool>,
 }
 
-pub async fn serve(
-    http_config: Option<HttpConfig>,
-    https_config: Option<HttpsConfig>,
-    state: AppState,
-    cancel: CancellationToken,
-) -> Result<()> {
-    if http_config.is_none() && https_config.is_none() {
-        bail!("Either http or https config is required");
+pub struct HttpServer {
+    tasks: JoinSet<std::io::Result<()>>,
+    http_addr: Option<SocketAddr>,
+    https_addr: Option<SocketAddr>,
+}
+
+impl HttpServer {
+    pub async fn spawn(
+        http_config: Option<HttpConfig>,
+        https_config: Option<HttpsConfig>,
+        state: AppState,
+    ) -> Result<HttpServer> {
+        if http_config.is_none() && https_config.is_none() {
+            bail!("Either http or https config is required");
+        }
+
+        let app = create_app(state);
+
+        let mut tasks = JoinSet::new();
+
+        // launch http
+        let http_addr = if let Some(config) = http_config {
+            let bind_addr = SocketAddr::new(
+                config.bind_addr.unwrap_or(Ipv4Addr::UNSPECIFIED.into()),
+                config.port,
+            );
+            let app = app.clone();
+            let listener = TcpListener::bind(bind_addr).await?.into_std()?;
+            let bound_addr = listener.local_addr()?;
+            let fut = axum_server::from_tcp(listener)
+                .serve(app.into_make_service_with_connect_info::<SocketAddr>());
+            info!("HTTP server listening on {bind_addr}");
+            tasks.spawn(fut);
+            Some(bound_addr)
+        } else {
+            None
+        };
+
+        // launch https
+        let https_addr = if let Some(config) = https_config {
+            let bind_addr = SocketAddr::new(
+                config.bind_addr.unwrap_or(Ipv4Addr::UNSPECIFIED.into()),
+                config.port,
+            );
+            let acceptor = {
+                let cache_path = Config::data_dir()?
+                    .join("cert_cache")
+                    .join(config.cert_mode.to_string());
+                tokio::fs::create_dir_all(&cache_path)
+                    .await
+                    .with_context(|| {
+                        format!("failed to create cert cache dir at {cache_path:?}")
+                    })?;
+                config
+                    .cert_mode
+                    .build(
+                        config.domains,
+                        cache_path,
+                        config.letsencrypt_contact,
+                        config.letsencrypt_prod.unwrap_or(false),
+                    )
+                    .await?
+            };
+            let listener = TcpListener::bind(bind_addr).await?.into_std()?;
+            let bound_addr = listener.local_addr()?;
+            let fut = axum_server::from_tcp(listener)
+                .acceptor(acceptor)
+                .serve(app.into_make_service_with_connect_info::<SocketAddr>());
+            info!("HTTPS server listening on {bind_addr}");
+            tasks.spawn(fut);
+            Some(bound_addr)
+        } else {
+            None
+        };
+
+        Ok(HttpServer {
+            tasks,
+            http_addr,
+            https_addr,
+        })
+    }
+    pub fn http_addr(&self) -> Option<SocketAddr> {
+        self.http_addr
+    }
+    pub fn https_addr(&self) -> Option<SocketAddr> {
+        self.https_addr
     }
 
+    pub async fn shutdown(mut self) -> Result<()> {
+        // TODO: Graceful cancellation.
+        self.tasks.abort_all();
+        self.run_until_done().await?;
+        Ok(())
+    }
+
+    pub async fn run_until_done(mut self) -> Result<()> {
+        let mut final_res: anyhow::Result<()> = Ok(());
+        while let Some(res) = self.tasks.join_next().await {
+            match res {
+                Ok(Ok(())) => {}
+                Err(err) if err.is_cancelled() => {}
+                Ok(Err(err)) => {
+                    warn!(?err, "task failed");
+                    final_res = Err(anyhow::Error::from(err));
+                }
+                Err(err) => {
+                    warn!(?err, "task panicked");
+                    final_res = Err(err.into());
+                }
+            }
+        }
+        final_res
+    }
+}
+
+pub fn create_app(state: AppState) -> Router {
     // configure cors middleware
     let cors = CorsLayer::new()
         // allow `GET` and `POST` when accessing the resource
@@ -103,57 +210,7 @@ pub async fn serve(
         .layer(trace)
         .route_layer(middleware::from_fn(metrics_middleware));
 
-    let mut tasks = JoinSet::new();
-
-    // launch http
-    if let Some(config) = http_config {
-        let app = app.clone();
-        let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, config.port));
-        info!("HTTP server listening on {addr}");
-        let fut =
-            axum_server::bind(addr).serve(app.into_make_service_with_connect_info::<SocketAddr>());
-        tasks.spawn(fut);
-    };
-
-    // launch https
-    if let Some(config) = https_config {
-        let addr = SocketAddr::from((Ipv4Addr::UNSPECIFIED, config.port));
-        info!("HTTPS server listening on {addr}");
-        let acceptor = {
-            let cache_path = Config::data_dir()?
-                .join("cert_cache")
-                .join(config.cert_mode.to_string());
-            tokio::fs::create_dir_all(&cache_path)
-                .await
-                .with_context(|| format!("failed to create cert cache dir at {cache_path:?}"))?;
-            config
-                .cert_mode
-                .build(
-                    config.domains,
-                    cache_path,
-                    config.letsencrypt_contact,
-                    config.letsencrypt_prod,
-                )
-                .await?
-        };
-        let fut = axum_server::bind(addr)
-            .acceptor(acceptor)
-            .serve(app.into_make_service_with_connect_info::<SocketAddr>());
-        tasks.spawn(fut);
-    }
-
-    loop {
-        tokio::select! {
-            // todo: graceful cancellation
-            _ = cancel.cancelled() => tasks.abort_all(),
-            res = tasks.join_next() => match res {
-                None => break,
-                Some(res) => res??,
-            }
-        }
-    }
-
-    Ok(())
+    app
 }
 
 /// Record request metrics.
