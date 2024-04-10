@@ -181,6 +181,6 @@ impl CachedZone {
 
     fn resolve(&self, name: &Name, record_type: RecordType) -> Option<Arc<RecordSet>> {
         let key = RrKey::new(name.into(), record_type);
-        self.records.get(&key).map(Arc::clone)
+        self.records.get(&key).cloned()
     }
 }

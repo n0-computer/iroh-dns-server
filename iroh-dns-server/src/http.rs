@@ -205,12 +205,10 @@ pub fn create_app(state: AppState) -> Router {
         .with_state(state);
 
     // configure app
-    let app = router
+    router
         .layer(cors)
         .layer(trace)
-        .route_layer(middleware::from_fn(metrics_middleware));
-
-    app
+        .route_layer(middleware::from_fn(metrics_middleware))
 }
 
 /// Record request metrics.
