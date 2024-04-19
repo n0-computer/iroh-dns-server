@@ -35,7 +35,7 @@ pkarr = { version = "1.1.2", features = [
 rcgen = "0.12.1"
 redb = "2.0.0"
 regex = "1.10.3"
-rustls = "0.21"
+rustls = "0.21.11"
 rustls-pemfile = "1"
 serde = { version = "1.0.197", features = ["derive"] }
 struct_iterable = "0.1.1"
